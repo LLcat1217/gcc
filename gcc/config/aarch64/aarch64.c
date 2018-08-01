@@ -206,7 +206,8 @@ static bool aarch64_builtin_support_vector_misalignment (machine_mode mode,
 							 int misalignment,
 							 bool is_packed);
 static machine_mode aarch64_simd_container_mode (scalar_mode, poly_int64);
-static bool aarch64_print_ldpstp_address (FILE *, machine_mode, rtx);
+static bool aarch64_print_address_internal (FILE*, machine_mode, rtx,
+					    aarch64_addr_query_type);
 
 /* Major revision number of the ARM Architecture implemented by the target.  */
 unsigned aarch64_architecture_version;
@@ -637,9 +638,9 @@ static const struct tune_params generic_tunings =
   4, /* memmov_cost  */
   2, /* issue_rate  */
   (AARCH64_FUSE_AES_AESMC), /* fusible_ops  */
-  8,	/* function_align.  */
-  4,	/* jump_align.  */
-  8,	/* loop_align.  */
+  "8",	/* function_align.  */
+  "4",	/* jump_align.  */
+  "8",	/* loop_align.  */
   2,	/* int_reassoc_width.  */
   4,	/* fp_reassoc_width.  */
   1,	/* vec_reassoc_width.  */
@@ -663,9 +664,9 @@ static const struct tune_params cortexa35_tunings =
   1, /* issue_rate  */
   (AARCH64_FUSE_AES_AESMC | AARCH64_FUSE_MOV_MOVK | AARCH64_FUSE_ADRP_ADD
    | AARCH64_FUSE_MOVK_MOVK | AARCH64_FUSE_ADRP_LDR), /* fusible_ops  */
-  16,	/* function_align.  */
-  4,	/* jump_align.  */
-  8,	/* loop_align.  */
+  "16",	/* function_align.  */
+  "4",	/* jump_align.  */
+  "8",	/* loop_align.  */
   2,	/* int_reassoc_width.  */
   4,	/* fp_reassoc_width.  */
   1,	/* vec_reassoc_width.  */
@@ -689,9 +690,9 @@ static const struct tune_params cortexa53_tunings =
   2, /* issue_rate  */
   (AARCH64_FUSE_AES_AESMC | AARCH64_FUSE_MOV_MOVK | AARCH64_FUSE_ADRP_ADD
    | AARCH64_FUSE_MOVK_MOVK | AARCH64_FUSE_ADRP_LDR), /* fusible_ops  */
-  16,	/* function_align.  */
-  4,	/* jump_align.  */
-  8,	/* loop_align.  */
+  "16",	/* function_align.  */
+  "4",	/* jump_align.  */
+  "8",	/* loop_align.  */
   2,	/* int_reassoc_width.  */
   4,	/* fp_reassoc_width.  */
   1,	/* vec_reassoc_width.  */
@@ -715,9 +716,9 @@ static const struct tune_params cortexa57_tunings =
   3, /* issue_rate  */
   (AARCH64_FUSE_AES_AESMC | AARCH64_FUSE_MOV_MOVK | AARCH64_FUSE_ADRP_ADD
    | AARCH64_FUSE_MOVK_MOVK), /* fusible_ops  */
-  16,	/* function_align.  */
-  4,	/* jump_align.  */
-  8,	/* loop_align.  */
+  "16",	/* function_align.  */
+  "4",	/* jump_align.  */
+  "8",	/* loop_align.  */
   2,	/* int_reassoc_width.  */
   4,	/* fp_reassoc_width.  */
   1,	/* vec_reassoc_width.  */
@@ -741,9 +742,9 @@ static const struct tune_params cortexa72_tunings =
   3, /* issue_rate  */
   (AARCH64_FUSE_AES_AESMC | AARCH64_FUSE_MOV_MOVK | AARCH64_FUSE_ADRP_ADD
    | AARCH64_FUSE_MOVK_MOVK), /* fusible_ops  */
-  16,	/* function_align.  */
-  4,	/* jump_align.  */
-  8,	/* loop_align.  */
+  "16",	/* function_align.  */
+  "4",	/* jump_align.  */
+  "8",	/* loop_align.  */
   2,	/* int_reassoc_width.  */
   4,	/* fp_reassoc_width.  */
   1,	/* vec_reassoc_width.  */
@@ -767,9 +768,9 @@ static const struct tune_params cortexa73_tunings =
   2, /* issue_rate.  */
   (AARCH64_FUSE_AES_AESMC | AARCH64_FUSE_MOV_MOVK | AARCH64_FUSE_ADRP_ADD
    | AARCH64_FUSE_MOVK_MOVK | AARCH64_FUSE_ADRP_LDR), /* fusible_ops  */
-  16,	/* function_align.  */
-  4,	/* jump_align.  */
-  8,	/* loop_align.  */
+  "16",	/* function_align.  */
+  "4",	/* jump_align.  */
+  "8",	/* loop_align.  */
   2,	/* int_reassoc_width.  */
   4,	/* fp_reassoc_width.  */
   1,	/* vec_reassoc_width.  */
@@ -794,9 +795,9 @@ static const struct tune_params exynosm1_tunings =
   4,	/* memmov_cost  */
   3,	/* issue_rate  */
   (AARCH64_FUSE_AES_AESMC), /* fusible_ops  */
-  4,	/* function_align.  */
-  4,	/* jump_align.  */
-  4,	/* loop_align.  */
+  "4",	/* function_align.  */
+  "4",	/* jump_align.  */
+  "4",	/* loop_align.  */
   2,	/* int_reassoc_width.  */
   4,	/* fp_reassoc_width.  */
   1,	/* vec_reassoc_width.  */
@@ -819,9 +820,9 @@ static const struct tune_params thunderxt88_tunings =
   6, /* memmov_cost  */
   2, /* issue_rate  */
   AARCH64_FUSE_CMP_BRANCH, /* fusible_ops  */
-  8,	/* function_align.  */
-  8,	/* jump_align.  */
-  8,	/* loop_align.  */
+  "8",	/* function_align.  */
+  "8",	/* jump_align.  */
+  "8",	/* loop_align.  */
   2,	/* int_reassoc_width.  */
   4,	/* fp_reassoc_width.  */
   1,	/* vec_reassoc_width.  */
@@ -844,9 +845,9 @@ static const struct tune_params thunderx_tunings =
   6, /* memmov_cost  */
   2, /* issue_rate  */
   AARCH64_FUSE_CMP_BRANCH, /* fusible_ops  */
-  8,	/* function_align.  */
-  8,	/* jump_align.  */
-  8,	/* loop_align.  */
+  "8",	/* function_align.  */
+  "8",	/* jump_align.  */
+  "8",	/* loop_align.  */
   2,	/* int_reassoc_width.  */
   4,	/* fp_reassoc_width.  */
   1,	/* vec_reassoc_width.  */
@@ -870,9 +871,9 @@ static const struct tune_params xgene1_tunings =
   6, /* memmov_cost  */
   4, /* issue_rate  */
   AARCH64_FUSE_NOTHING, /* fusible_ops  */
-  16,	/* function_align.  */
-  8,	/* jump_align.  */
-  16,	/* loop_align.  */
+  "16",	/* function_align.  */
+  "8",	/* jump_align.  */
+  "16",	/* loop_align.  */
   2,	/* int_reassoc_width.  */
   4,	/* fp_reassoc_width.  */
   1,	/* vec_reassoc_width.  */
@@ -896,9 +897,9 @@ static const struct tune_params qdf24xx_tunings =
   4, /* issue_rate  */
   (AARCH64_FUSE_MOV_MOVK | AARCH64_FUSE_ADRP_ADD
    | AARCH64_FUSE_MOVK_MOVK), /* fuseable_ops  */
-  16,	/* function_align.  */
-  8,	/* jump_align.  */
-  16,	/* loop_align.  */
+  "16",	/* function_align.  */
+  "8",	/* jump_align.  */
+  "16",	/* loop_align.  */
   2,	/* int_reassoc_width.  */
   4,	/* fp_reassoc_width.  */
   1,	/* vec_reassoc_width.  */
@@ -924,9 +925,9 @@ static const struct tune_params saphira_tunings =
   4, /* issue_rate  */
   (AARCH64_FUSE_MOV_MOVK | AARCH64_FUSE_ADRP_ADD
    | AARCH64_FUSE_MOVK_MOVK), /* fuseable_ops  */
-  16,	/* function_align.  */
-  8,	/* jump_align.  */
-  16,	/* loop_align.  */
+  "16",	/* function_align.  */
+  "8",	/* jump_align.  */
+  "16",	/* loop_align.  */
   2,	/* int_reassoc_width.  */
   4,	/* fp_reassoc_width.  */
   1,	/* vec_reassoc_width.  */
@@ -950,9 +951,9 @@ static const struct tune_params thunderx2t99_tunings =
   4, /* issue_rate.  */
   (AARCH64_FUSE_CMP_BRANCH | AARCH64_FUSE_AES_AESMC
    | AARCH64_FUSE_ALU_BRANCH), /* fusible_ops  */
-  16,	/* function_align.  */
-  8,	/* jump_align.  */
-  16,	/* loop_align.  */
+  "16",	/* function_align.  */
+  "8",	/* jump_align.  */
+  "16",	/* loop_align.  */
   3,	/* int_reassoc_width.  */
   2,	/* fp_reassoc_width.  */
   2,	/* vec_reassoc_width.  */
@@ -1318,6 +1319,20 @@ aarch64_get_mask_mode (poly_uint64 nunits, poly_uint64 nbytes)
     }
 
   return default_get_mask_mode (nunits, nbytes);
+}
+
+/* Implement TARGET_PREFERRED_ELSE_VALUE.  For binary operations,
+   prefer to use the first arithmetic operand as the else value if
+   the else value doesn't matter, since that exactly matches the SVE
+   destructive merging form.  For ternary operations we could either
+   pick the first operand and use FMAD-like instructions or the last
+   operand and use FMLA-like instructions; the latter seems more
+   natural.  */
+
+static tree
+aarch64_preferred_else_value (unsigned, tree, unsigned int nops, tree *ops)
+{
+  return nops == 3 ? ops[2] : ops[0];
 }
 
 /* Implement TARGET_HARD_REGNO_NREGS.  */
@@ -5728,9 +5743,17 @@ aarch64_classify_address (struct aarch64_address_info *info,
   unsigned int vec_flags = aarch64_classify_vector_mode (mode);
   bool advsimd_struct_p = (vec_flags == (VEC_ADVSIMD | VEC_STRUCT));
   bool load_store_pair_p = (type == ADDR_QUERY_LDP_STP
+			    || type == ADDR_QUERY_LDP_STP_N
 			    || mode == TImode
 			    || mode == TFmode
 			    || (BYTES_BIG_ENDIAN && advsimd_struct_p));
+
+  /* If we are dealing with ADDR_QUERY_LDP_STP_N that means the incoming mode
+     corresponds to the actual size of the memory being loaded/stored and the
+     mode of the corresponding addressing mode is half of that.  */
+  if (type == ADDR_QUERY_LDP_STP_N
+      && known_eq (GET_MODE_SIZE (mode), 16))
+    mode = DFmode;
 
   bool allow_reg_index_p = (!load_store_pair_p
 			    && (known_lt (GET_MODE_SIZE (mode), 16)
@@ -6391,6 +6414,13 @@ aarch64_select_cc_mode (RTX_CODE code, rtx x, rtx y)
       && GET_CODE (y) == ZERO_EXTEND)
     return CC_Cmode;
 
+  /* A test for signed overflow.  */
+  if ((GET_MODE (x) == DImode || GET_MODE (x) == TImode)
+      && code == NE
+      && GET_CODE (x) == PLUS
+      && GET_CODE (y) == SIGN_EXTEND)
+    return CC_Vmode;
+
   /* For everything else, return CCmode.  */
   return CCmode;
 }
@@ -6493,6 +6523,15 @@ aarch64_get_condition_code_1 (machine_mode mode, enum rtx_code comp_code)
 	{
 	case NE: return AARCH64_CS;
 	case EQ: return AARCH64_CC;
+	default: return -1;
+	}
+      break;
+
+    case E_CC_Vmode:
+      switch (comp_code)
+	{
+	case NE: return AARCH64_VS;
+	case EQ: return AARCH64_VC;
 	default: return -1;
 	}
       break;
@@ -6746,6 +6785,12 @@ aarch64_print_operand (FILE *f, rtx x, int code)
       break;
 
     case 'H':
+      if (x == const0_rtx)
+	{
+	  asm_fprintf (f, "xzr");
+	  break;
+	}
+
       if (!REG_P (x) || !GP_REGNUM_P (REGNO (x) + 1))
 	{
 	  output_operand_lossage ("invalid operand for '%%%c'", code);
@@ -7108,13 +7153,10 @@ aarch64_print_operand (FILE *f, rtx x, int code)
 	    return;
 	  }
 
-	if (code == 'y')
-	  /* LDP/STP which uses a single double-width memory operand.
-	     Adjust the mode to appear like a typical LDP/STP.
-	     Currently this is supported for 16-byte accesses only.  */
-	  mode = DFmode;
-
-	if (!aarch64_print_ldpstp_address (f, mode, XEXP (x, 0)))
+	if (!aarch64_print_address_internal (f, mode, XEXP (x, 0),
+					    code == 'y'
+					    ? ADDR_QUERY_LDP_STP_N
+					    : ADDR_QUERY_LDP_STP))
 	  output_operand_lossage ("invalid operand prefix '%%%c'", code);
       }
       break;
@@ -7235,13 +7277,6 @@ aarch64_print_address_internal (FILE *f, machine_mode mode, rtx x,
       }
 
   return false;
-}
-
-/* Print address 'x' of a LDP/STP with mode 'mode'.  */
-static bool
-aarch64_print_ldpstp_address (FILE *f, machine_mode mode, rtx x)
-{
-  return aarch64_print_address_internal (f, mode, x, ADDR_QUERY_LDP_STP);
 }
 
 /* Print address 'x' of a memory access with mode 'mode'.  */
@@ -10572,12 +10607,12 @@ aarch64_override_options_after_change_1 (struct gcc_options *opts)
      alignment to what the target wants.  */
   if (!opts->x_optimize_size)
     {
-      if (opts->x_align_loops <= 0)
-	opts->x_align_loops = aarch64_tune_params.loop_align;
-      if (opts->x_align_jumps <= 0)
-	opts->x_align_jumps = aarch64_tune_params.jump_align;
-      if (opts->x_align_functions <= 0)
-	opts->x_align_functions = aarch64_tune_params.function_align;
+      if (opts->x_flag_align_loops && !opts->x_str_align_loops)
+	opts->x_str_align_loops = aarch64_tune_params.loop_align;
+      if (opts->x_flag_align_jumps && !opts->x_str_align_jumps)
+	opts->x_str_align_jumps = aarch64_tune_params.jump_align;
+      if (opts->x_flag_align_functions && !opts->x_str_align_functions)
+	opts->x_str_align_functions = aarch64_tune_params.function_align;
     }
 
   /* We default to no pc-relative literal loads.  */
@@ -12573,6 +12608,19 @@ aarch64_conditional_register_usage (void)
 	fixed_regs[i] = 1;
 	call_used_regs[i] = 1;
       }
+
+  /* When tracking speculation, we need a couple of call-clobbered registers
+     to track the speculation state.  It would be nice to just use
+     IP0 and IP1, but currently there are numerous places that just
+     assume these registers are free for other uses (eg pointer
+     authentication).  */
+  if (aarch64_track_speculation)
+    {
+      fixed_regs[SPECULATION_TRACKER_REGNUM] = 1;
+      call_used_regs[SPECULATION_TRACKER_REGNUM] = 1;
+      fixed_regs[SPECULATION_SCRATCH_REGNUM] = 1;
+      call_used_regs[SPECULATION_SCRATCH_REGNUM] = 1;
+    }
 }
 
 /* Walk down the type tree of TYPE counting consecutive base elements.
@@ -14465,7 +14513,16 @@ aarch64_split_compare_and_swap (rtx operands[])
 
   if (strong_zero_p)
     {
-      x = gen_rtx_NE (VOIDmode, rval, const0_rtx);
+      if (aarch64_track_speculation)
+	{
+	  /* Emit an explicit compare instruction, so that we can correctly
+	     track the condition codes.  */
+	  rtx cc_reg = aarch64_gen_compare_reg (NE, rval, const0_rtx);
+	  x = gen_rtx_NE (GET_MODE (cc_reg), cc_reg, const0_rtx);
+	}
+      else
+	x = gen_rtx_NE (VOIDmode, rval, const0_rtx);
+
       x = gen_rtx_IF_THEN_ELSE (VOIDmode, x,
 				gen_rtx_LABEL_REF (Pmode, label2), pc_rtx);
       aarch64_emit_unlikely_jump (gen_rtx_SET (pc_rtx, x));
@@ -14483,7 +14540,16 @@ aarch64_split_compare_and_swap (rtx operands[])
 
   if (!is_weak)
     {
-      x = gen_rtx_NE (VOIDmode, scratch, const0_rtx);
+      if (aarch64_track_speculation)
+	{
+	  /* Emit an explicit compare instruction, so that we can correctly
+	     track the condition codes.  */
+	  rtx cc_reg = aarch64_gen_compare_reg (NE, scratch, const0_rtx);
+	  x = gen_rtx_NE (GET_MODE (cc_reg), cc_reg, const0_rtx);
+	}
+      else
+	x = gen_rtx_NE (VOIDmode, scratch, const0_rtx);
+
       x = gen_rtx_IF_THEN_ELSE (VOIDmode, x,
 				gen_rtx_LABEL_REF (Pmode, label1), pc_rtx);
       aarch64_emit_unlikely_jump (gen_rtx_SET (pc_rtx, x));
@@ -14819,7 +14885,16 @@ aarch64_split_atomic_op (enum rtx_code code, rtx old_out, rtx new_out, rtx mem,
   aarch64_emit_store_exclusive (mode, cond, mem,
 				gen_lowpart (mode, new_out), model_rtx);
 
-  x = gen_rtx_NE (VOIDmode, cond, const0_rtx);
+  if (aarch64_track_speculation)
+    {
+      /* Emit an explicit compare instruction, so that we can correctly
+	 track the condition codes.  */
+      rtx cc_reg = aarch64_gen_compare_reg (NE, cond, const0_rtx);
+      x = gen_rtx_NE (GET_MODE (cc_reg), cc_reg, const0_rtx);
+    }
+  else
+    x = gen_rtx_NE (VOIDmode, cond, const0_rtx);
+
   x = gen_rtx_IF_THEN_ELSE (VOIDmode, x,
 			    gen_rtx_LABEL_REF (Pmode, label), pc_rtx);
   aarch64_emit_unlikely_jump (gen_rtx_SET (pc_rtx, x));
@@ -16058,54 +16133,6 @@ aarch64_expand_sve_vcond (machine_mode data_mode, machine_mode cmp_mode,
   emit_set_insn (ops[0], gen_rtx_UNSPEC (data_mode, vec, UNSPEC_SEL));
 }
 
-/* Prepare a cond_<optab><mode> operation that has the operands
-   given by OPERANDS, where:
-
-   - operand 0 is the destination
-   - operand 1 is a predicate
-   - operands 2 to NOPS - 2 are the operands to an operation that is
-     performed for active lanes
-   - operand NOPS - 1 specifies the values to use for inactive lanes.
-
-   COMMUTATIVE_P is true if operands 2 and 3 are commutative.  In that case,
-   no pattern is provided for a tie between operands 3 and NOPS - 1.  */
-
-void
-aarch64_sve_prepare_conditional_op (rtx *operands, unsigned int nops,
-				    bool commutative_p)
-{
-  /* We can do the operation directly if the "else" value matches one
-     of the other inputs.  */
-  for (unsigned int i = 2; i < nops - 1; ++i)
-    if (rtx_equal_p (operands[i], operands[nops - 1]))
-      {
-	if (i == 3 && commutative_p)
-	  std::swap (operands[2], operands[3]);
-	return;
-      }
-
-  /* If the "else" value is different from the other operands, we have
-     the choice of doing a SEL on the output or a SEL on an input.
-     Neither choice is better in all cases, but one advantage of
-     selecting the input is that it can avoid a move when the output
-     needs to be distinct from the inputs.  E.g. if operand N maps to
-     register N, selecting the output would give:
-
-	MOVPRFX Z0.S, Z2.S
-	ADD Z0.S, P1/M, Z0.S, Z3.S
-	SEL Z0.S, P1, Z0.S, Z4.S
-
-     whereas selecting the input avoids the MOVPRFX:
-
-	SEL Z0.S, P1, Z2.S, Z4.S
-	ADD Z0.S, P1/M, Z0.S, Z3.S.  */
-  machine_mode mode = GET_MODE (operands[0]);
-  rtx temp = gen_reg_rtx (mode);
-  rtvec vec = gen_rtvec (3, operands[1], operands[2], operands[nops - 1]);
-  emit_set_insn (temp, gen_rtx_UNSPEC (mode, vec, UNSPEC_SEL));
-  operands[2] = operands[nops - 1] = temp;
-}
-
 /* Implement TARGET_MODES_TIEABLE_P.  In principle we should always return
    true.  However due to issues with register allocation it is preferable
    to avoid tieing integer scalar and FP scalar modes.  Executing integer
@@ -16185,26 +16212,29 @@ aarch64_copy_one_block_and_progress_pointers (rtx *src, rtx *dst,
 bool
 aarch64_expand_movmem (rtx *operands)
 {
-  unsigned int n;
+  int n, mode_bits;
   rtx dst = operands[0];
   rtx src = operands[1];
   rtx base;
+  machine_mode cur_mode = BLKmode, next_mode;
   bool speed_p = !optimize_function_for_size_p (cfun);
 
   /* When optimizing for size, give a better estimate of the length of a
-     memcpy call, but use the default otherwise.  */
-  unsigned int max_instructions = (speed_p ? 15 : AARCH64_CALL_RATIO) / 2;
+     memcpy call, but use the default otherwise.  Moves larger than 8 bytes
+     will always require an even number of instructions to do now.  And each
+     operation requires both a load+store, so devide the max number by 2.  */
+  int max_num_moves = (speed_p ? 16 : AARCH64_CALL_RATIO) / 2;
 
   /* We can't do anything smart if the amount to copy is not constant.  */
   if (!CONST_INT_P (operands[2]))
     return false;
 
-  n = UINTVAL (operands[2]);
+  n = INTVAL (operands[2]);
 
-  /* Try to keep the number of instructions low.  For cases below 16 bytes we
-     need to make at most two moves.  For cases above 16 bytes it will be one
-     move for each 16 byte chunk, then at most two additional moves.  */
-  if (((n / 16) + (n % 16 ? 2 : 0)) > max_instructions)
+  /* Try to keep the number of instructions low.  For all cases we will do at
+     most two moves for the residual amount, since we'll always overlap the
+     remainder.  */
+  if (((n / 16) + (n % 16 ? 2 : 0)) > max_num_moves)
     return false;
 
   base = copy_to_mode_reg (Pmode, XEXP (dst, 0));
@@ -16213,81 +16243,36 @@ aarch64_expand_movmem (rtx *operands)
   base = copy_to_mode_reg (Pmode, XEXP (src, 0));
   src = adjust_automodify_address (src, VOIDmode, base, 0);
 
-  /* Simple cases.  Copy 0-3 bytes, as (if applicable) a 2-byte, then a
-     1-byte chunk.  */
-  if (n < 4)
+  /* Convert n to bits to make the rest of the code simpler.  */
+  n = n * BITS_PER_UNIT;
+
+  while (n > 0)
     {
-      if (n >= 2)
+      /* Find the largest mode in which to do the copy in without over reading
+	 or writing.  */
+      opt_scalar_int_mode mode_iter;
+      FOR_EACH_MODE_IN_CLASS (mode_iter, MODE_INT)
+	if (GET_MODE_BITSIZE (mode_iter.require ()) <= n)
+	  cur_mode = mode_iter.require ();
+
+      gcc_assert (cur_mode != BLKmode);
+
+      mode_bits = GET_MODE_BITSIZE (cur_mode).to_constant ();
+      aarch64_copy_one_block_and_progress_pointers (&src, &dst, cur_mode);
+
+      n -= mode_bits;
+
+      /* Do certain trailing copies as overlapping if it's going to be
+	 cheaper.  i.e. less instructions to do so.  For instance doing a 15
+	 byte copy it's more efficient to do two overlapping 8 byte copies than
+	 8 + 6 + 1.  */
+      next_mode = smallest_mode_for_size (n, MODE_INT);
+      int n_bits = GET_MODE_BITSIZE (next_mode).to_constant ();
+      if (n > 0 && n_bits > n && n_bits <= 8 * BITS_PER_UNIT)
 	{
-	  aarch64_copy_one_block_and_progress_pointers (&src, &dst, HImode);
-	  n -= 2;
-	}
-
-      if (n == 1)
-	aarch64_copy_one_block_and_progress_pointers (&src, &dst, QImode);
-
-      return true;
-    }
-
-  /* Copy 4-8 bytes.  First a 4-byte chunk, then (if applicable) a second
-     4-byte chunk, partially overlapping with the previously copied chunk.  */
-  if (n < 8)
-    {
-      aarch64_copy_one_block_and_progress_pointers (&src, &dst, SImode);
-      n -= 4;
-      if (n > 0)
-	{
-	  int move = n - 4;
-
-	  src = aarch64_move_pointer (src, move);
-	  dst = aarch64_move_pointer (dst, move);
-	  aarch64_copy_one_block_and_progress_pointers (&src, &dst, SImode);
-	}
-      return true;
-    }
-
-  /* Copy more than 8 bytes.  Copy chunks of 16 bytes until we run out of
-     them, then (if applicable) an 8-byte chunk.  */
-  while (n >= 8)
-    {
-      if (n / 16)
-	{
-	  aarch64_copy_one_block_and_progress_pointers (&src, &dst, TImode);
-	  n -= 16;
-	}
-      else
-	{
-	  aarch64_copy_one_block_and_progress_pointers (&src, &dst, DImode);
-	  n -= 8;
-	}
-    }
-
-  /* Finish the final bytes of the copy.  We can always do this in one
-     instruction.  We either copy the exact amount we need, or partially
-     overlap with the previous chunk we copied and copy 8-bytes.  */
-  if (n == 0)
-    return true;
-  else if (n == 1)
-    aarch64_copy_one_block_and_progress_pointers (&src, &dst, QImode);
-  else if (n == 2)
-    aarch64_copy_one_block_and_progress_pointers (&src, &dst, HImode);
-  else if (n == 4)
-    aarch64_copy_one_block_and_progress_pointers (&src, &dst, SImode);
-  else
-    {
-      if (n == 3)
-	{
-	  src = aarch64_move_pointer (src, -1);
-	  dst = aarch64_move_pointer (dst, -1);
-	  aarch64_copy_one_block_and_progress_pointers (&src, &dst, SImode);
-	}
-      else
-	{
-	  int move = n - 8;
-
-	  src = aarch64_move_pointer (src, move);
-	  dst = aarch64_move_pointer (dst, move);
-	  aarch64_copy_one_block_and_progress_pointers (&src, &dst, DImode);
+	  src = aarch64_move_pointer (src, (n - n_bits) / BITS_PER_UNIT);
+	  dst = aarch64_move_pointer (dst, (n - n_bits) / BITS_PER_UNIT);
+	  n = n_bits;
 	}
     }
 
@@ -16349,6 +16334,131 @@ aarch64_split_dimode_const_store (rtx dst, rtx src)
   emit_move_insn (mem_hi, tmp_reg);
 
   return true;
+}
+
+/* Generate RTL for a conditional branch with rtx comparison CODE in
+   mode CC_MODE.  The destination of the unlikely conditional branch
+   is LABEL_REF.  */
+
+void
+aarch64_gen_unlikely_cbranch (enum rtx_code code, machine_mode cc_mode,
+			      rtx label_ref)
+{
+  rtx x;
+  x = gen_rtx_fmt_ee (code, VOIDmode,
+		      gen_rtx_REG (cc_mode, CC_REGNUM),
+		      const0_rtx);
+
+  x = gen_rtx_IF_THEN_ELSE (VOIDmode, x,
+			    gen_rtx_LABEL_REF (VOIDmode, label_ref),
+			    pc_rtx);
+  aarch64_emit_unlikely_jump (gen_rtx_SET (pc_rtx, x));
+}
+
+/* Generate DImode scratch registers for 128-bit (TImode) addition.
+
+   OP1 represents the TImode destination operand 1
+   OP2 represents the TImode destination operand 2
+   LOW_DEST represents the low half (DImode) of TImode operand 0
+   LOW_IN1 represents the low half (DImode) of TImode operand 1
+   LOW_IN2 represents the low half (DImode) of TImode operand 2
+   HIGH_DEST represents the high half (DImode) of TImode operand 0
+   HIGH_IN1 represents the high half (DImode) of TImode operand 1
+   HIGH_IN2 represents the high half (DImode) of TImode operand 2.  */
+
+void
+aarch64_addti_scratch_regs (rtx op1, rtx op2, rtx *low_dest,
+			    rtx *low_in1, rtx *low_in2,
+			    rtx *high_dest, rtx *high_in1,
+			    rtx *high_in2)
+{
+  *low_dest = gen_reg_rtx (DImode);
+  *low_in1 = gen_lowpart (DImode, op1);
+  *low_in2 = simplify_gen_subreg (DImode, op2, TImode,
+				  subreg_lowpart_offset (DImode, TImode));
+  *high_dest = gen_reg_rtx (DImode);
+  *high_in1 = gen_highpart (DImode, op1);
+  *high_in2 = simplify_gen_subreg (DImode, op2, TImode,
+				   subreg_highpart_offset (DImode, TImode));
+}
+
+/* Generate DImode scratch registers for 128-bit (TImode) subtraction.
+
+   This function differs from 'arch64_addti_scratch_regs' in that
+   OP1 can be an immediate constant (zero). We must call
+   subreg_highpart_offset with DImode and TImode arguments, otherwise
+   VOIDmode will be used for the const_int which generates an internal
+   error from subreg_size_highpart_offset which does not expect a size of zero.
+
+   OP1 represents the TImode destination operand 1
+   OP2 represents the TImode destination operand 2
+   LOW_DEST represents the low half (DImode) of TImode operand 0
+   LOW_IN1 represents the low half (DImode) of TImode operand 1
+   LOW_IN2 represents the low half (DImode) of TImode operand 2
+   HIGH_DEST represents the high half (DImode) of TImode operand 0
+   HIGH_IN1 represents the high half (DImode) of TImode operand 1
+   HIGH_IN2 represents the high half (DImode) of TImode operand 2.  */
+
+
+void
+aarch64_subvti_scratch_regs (rtx op1, rtx op2, rtx *low_dest,
+			     rtx *low_in1, rtx *low_in2,
+			     rtx *high_dest, rtx *high_in1,
+			     rtx *high_in2)
+{
+  *low_dest = gen_reg_rtx (DImode);
+  *low_in1 = simplify_gen_subreg (DImode, op1, TImode,
+				  subreg_lowpart_offset (DImode, TImode));
+
+  *low_in2 = simplify_gen_subreg (DImode, op2, TImode,
+				  subreg_lowpart_offset (DImode, TImode));
+  *high_dest = gen_reg_rtx (DImode);
+
+  *high_in1 = simplify_gen_subreg (DImode, op1, TImode,
+				   subreg_highpart_offset (DImode, TImode));
+  *high_in2 = simplify_gen_subreg (DImode, op2, TImode,
+				   subreg_highpart_offset (DImode, TImode));
+}
+
+/* Generate RTL for 128-bit (TImode) subtraction with overflow.
+
+   OP0 represents the TImode destination operand 0
+   LOW_DEST represents the low half (DImode) of TImode operand 0
+   LOW_IN1 represents the low half (DImode) of TImode operand 1
+   LOW_IN2 represents the low half (DImode) of TImode operand 2
+   HIGH_DEST represents the high half (DImode) of TImode operand 0
+   HIGH_IN1 represents the high half (DImode) of TImode operand 1
+   HIGH_IN2 represents the high half (DImode) of TImode operand 2.  */
+
+void
+aarch64_expand_subvti (rtx op0, rtx low_dest, rtx low_in1,
+		       rtx low_in2, rtx high_dest, rtx high_in1,
+		       rtx high_in2)
+{
+  if (low_in2 == const0_rtx)
+    {
+      low_dest = low_in1;
+      emit_insn (gen_subdi3_compare1 (high_dest, high_in1,
+				      force_reg (DImode, high_in2)));
+    }
+  else
+    {
+      if (CONST_INT_P (low_in2))
+	{
+	  low_in2 = force_reg (DImode, GEN_INT (-UINTVAL (low_in2)));
+	  high_in2 = force_reg (DImode, high_in2);
+	  emit_insn (gen_adddi3_compareC (low_dest, low_in1, low_in2));
+	}
+      else
+	emit_insn (gen_subdi3_compare1 (low_dest, low_in1, low_in2));
+      emit_insn (gen_subdi3_carryinCV (high_dest,
+				       force_reg (DImode, high_in1),
+				       high_in2));
+    }
+
+  emit_move_insn (gen_lowpart (DImode, op0), low_dest);
+  emit_move_insn (gen_highpart (DImode, op0), high_dest);
+
 }
 
 /* Implement the TARGET_ASAN_SHADOW_OFFSET hook.  */
@@ -17116,23 +17226,20 @@ bool
 aarch64_operands_adjust_ok_for_ldpstp (rtx *operands, bool load,
 				       scalar_mode mode)
 {
-  enum reg_class rclass_1, rclass_2, rclass_3, rclass_4;
-  HOST_WIDE_INT offvals[4], msize;
-  rtx mem_1, mem_2, mem_3, mem_4, reg_1, reg_2, reg_3, reg_4;
-  rtx base_1, base_2, base_3, base_4, offset_1, offset_2, offset_3, offset_4;
+  const int num_insns = 4;
+  enum reg_class rclass;
+  HOST_WIDE_INT offvals[num_insns], msize;
+  rtx mem[num_insns], reg[num_insns], base[num_insns], offset[num_insns];
 
   if (load)
     {
-      reg_1 = operands[0];
-      mem_1 = operands[1];
-      reg_2 = operands[2];
-      mem_2 = operands[3];
-      reg_3 = operands[4];
-      mem_3 = operands[5];
-      reg_4 = operands[6];
-      mem_4 = operands[7];
-      gcc_assert (REG_P (reg_1) && REG_P (reg_2)
-		  && REG_P (reg_3) && REG_P (reg_4));
+      for (int i = 0; i < num_insns; i++)
+	{
+	  reg[i] = operands[2 * i];
+	  mem[i] = operands[2 * i + 1];
+
+	  gcc_assert (REG_P (reg[i]));
+	}
 
       /* Do not attempt to merge the loads if the loads clobber each other.  */
       for (int i = 0; i < 8; i += 2)
@@ -17141,53 +17248,47 @@ aarch64_operands_adjust_ok_for_ldpstp (rtx *operands, bool load,
 	    return false;
     }
   else
+    for (int i = 0; i < num_insns; i++)
+      {
+	mem[i] = operands[2 * i];
+	reg[i] = operands[2 * i + 1];
+      }
+
+  /* Skip if memory operand is by itself valid for ldp/stp.  */
+  if (!MEM_P (mem[0]) || aarch64_mem_pair_operand (mem[0], mode))
+    return false;
+
+  for (int i = 0; i < num_insns; i++)
     {
-      mem_1 = operands[0];
-      reg_1 = operands[1];
-      mem_2 = operands[2];
-      reg_2 = operands[3];
-      mem_3 = operands[4];
-      reg_3 = operands[5];
-      mem_4 = operands[6];
-      reg_4 = operands[7];
+      /* The mems cannot be volatile.  */
+      if (MEM_VOLATILE_P (mem[i]))
+	return false;
+
+      /* Check if the addresses are in the form of [base+offset].  */
+      extract_base_offset_in_addr (mem[i], base + i, offset + i);
+      if (base[i] == NULL_RTX || offset[i] == NULL_RTX)
+	return false;
     }
-  /* Skip if memory operand is by itslef valid for ldp/stp.  */
-  if (!MEM_P (mem_1) || aarch64_mem_pair_operand (mem_1, mode))
-    return false;
 
-  /* The mems cannot be volatile.  */
-  if (MEM_VOLATILE_P (mem_1) || MEM_VOLATILE_P (mem_2)
-      || MEM_VOLATILE_P (mem_3) ||MEM_VOLATILE_P (mem_4))
-    return false;
-
-  /* Check if the addresses are in the form of [base+offset].  */
-  extract_base_offset_in_addr (mem_1, &base_1, &offset_1);
-  if (base_1 == NULL_RTX || offset_1 == NULL_RTX)
-    return false;
-  extract_base_offset_in_addr (mem_2, &base_2, &offset_2);
-  if (base_2 == NULL_RTX || offset_2 == NULL_RTX)
-    return false;
-  extract_base_offset_in_addr (mem_3, &base_3, &offset_3);
-  if (base_3 == NULL_RTX || offset_3 == NULL_RTX)
-    return false;
-  extract_base_offset_in_addr (mem_4, &base_4, &offset_4);
-  if (base_4 == NULL_RTX || offset_4 == NULL_RTX)
-    return false;
+  /* Check if addresses are clobbered by load.  */
+  if (load)
+    for (int i = 0; i < num_insns; i++)
+      if (reg_mentioned_p (reg[i], mem[i]))
+	return false;
 
   /* Check if the bases are same.  */
-  if (!rtx_equal_p (base_1, base_2)
-      || !rtx_equal_p (base_2, base_3)
-      || !rtx_equal_p (base_3, base_4))
-    return false;
+  for (int i = 0; i < num_insns - 1; i++)
+    if (!rtx_equal_p (base[i], base[i + 1]))
+      return false;
 
-  offvals[0] = INTVAL (offset_1);
-  offvals[1] = INTVAL (offset_2);
-  offvals[2] = INTVAL (offset_3);
-  offvals[3] = INTVAL (offset_4);
+  for (int i = 0; i < num_insns; i++)
+    offvals[i] = INTVAL (offset[i]);
+
   msize = GET_MODE_SIZE (mode);
 
   /* Check if the offsets can be put in the right order to do a ldp/stp.  */
-  qsort (offvals, 4, sizeof (HOST_WIDE_INT), aarch64_host_wide_int_compare);
+  qsort (offvals, num_insns, sizeof (HOST_WIDE_INT),
+	 aarch64_host_wide_int_compare);
 
   if (!(offvals[1] == offvals[0] + msize
 	&& offvals[3] == offvals[2] + msize))
@@ -17202,45 +17303,30 @@ aarch64_operands_adjust_ok_for_ldpstp (rtx *operands, bool load,
   if (offvals[0] % msize != offvals[2] % msize)
     return false;
 
-  /* Check if the addresses are clobbered by load.  */
-  if (load && (reg_mentioned_p (reg_1, mem_1)
-	       || reg_mentioned_p (reg_2, mem_2)
-	       || reg_mentioned_p (reg_3, mem_3)
-	       || reg_mentioned_p (reg_4, mem_4)))
-    return false;
-
   /* If we have SImode and slow unaligned ldp,
      check the alignment to be at least 8 byte. */
   if (mode == SImode
       && (aarch64_tune_params.extra_tuning_flags
-          & AARCH64_EXTRA_TUNE_SLOW_UNALIGNED_LDPW)
+	  & AARCH64_EXTRA_TUNE_SLOW_UNALIGNED_LDPW)
       && !optimize_size
-      && MEM_ALIGN (mem_1) < 8 * BITS_PER_UNIT)
+      && MEM_ALIGN (mem[0]) < 8 * BITS_PER_UNIT)
     return false;
-
-  if (REG_P (reg_1) && FP_REGNUM_P (REGNO (reg_1)))
-    rclass_1 = FP_REGS;
-  else
-    rclass_1 = GENERAL_REGS;
-
-  if (REG_P (reg_2) && FP_REGNUM_P (REGNO (reg_2)))
-    rclass_2 = FP_REGS;
-  else
-    rclass_2 = GENERAL_REGS;
-
-  if (REG_P (reg_3) && FP_REGNUM_P (REGNO (reg_3)))
-    rclass_3 = FP_REGS;
-  else
-    rclass_3 = GENERAL_REGS;
-
-  if (REG_P (reg_4) && FP_REGNUM_P (REGNO (reg_4)))
-    rclass_4 = FP_REGS;
-  else
-    rclass_4 = GENERAL_REGS;
 
   /* Check if the registers are of same class.  */
-  if (rclass_1 != rclass_2 || rclass_2 != rclass_3 || rclass_3 != rclass_4)
-    return false;
+  rclass = REG_P (reg[0]) && FP_REGNUM_P (REGNO (reg[0]))
+    ? FP_REGS : GENERAL_REGS;
+
+  for (int i = 1; i < num_insns; i++)
+    if (REG_P (reg[i]) && FP_REGNUM_P (REGNO (reg[i])))
+      {
+	if (rclass != FP_REGS)
+	  return false;
+      }
+    else
+      {
+	if (rclass != GENERAL_REGS)
+	  return false;
+      }
 
   return true;
 }
@@ -17698,6 +17784,45 @@ aarch64_select_early_remat_modes (sbitmap modes)
     }
 }
 
+/* Override the default target speculation_safe_value.  */
+static rtx
+aarch64_speculation_safe_value (machine_mode mode,
+				rtx result, rtx val, rtx failval)
+{
+  /* Maybe we should warn if falling back to hard barriers.  They are
+     likely to be noticably more expensive than the alternative below.  */
+  if (!aarch64_track_speculation)
+    return default_speculation_safe_value (mode, result, val, failval);
+
+  if (!REG_P (val))
+    val = copy_to_mode_reg (mode, val);
+
+  if (!aarch64_reg_or_zero (failval, mode))
+    failval = copy_to_mode_reg (mode, failval);
+
+  switch (mode)
+    {
+    case E_QImode:
+      emit_insn (gen_despeculate_copyqi (result, val, failval));
+      break;
+    case E_HImode:
+      emit_insn (gen_despeculate_copyhi (result, val, failval));
+      break;
+    case E_SImode:
+      emit_insn (gen_despeculate_copysi (result, val, failval));
+      break;
+    case E_DImode:
+      emit_insn (gen_despeculate_copydi (result, val, failval));
+      break;
+    case E_TImode:
+      emit_insn (gen_despeculate_copyti (result, val, failval));
+      break;
+    default:
+      gcc_unreachable ();
+    }
+  return result;
+}
+
 /* Target-specific selftests.  */
 
 #if CHECKING_P
@@ -18080,6 +18205,9 @@ aarch64_libgcc_floating_mode_supported_p
 #undef TARGET_VECTORIZE_EMPTY_MASK_IS_EXPENSIVE
 #define TARGET_VECTORIZE_EMPTY_MASK_IS_EXPENSIVE \
   aarch64_empty_mask_is_expensive
+#undef TARGET_PREFERRED_ELSE_VALUE
+#define TARGET_PREFERRED_ELSE_VALUE \
+  aarch64_preferred_else_value
 
 #undef TARGET_INIT_LIBFUNCS
 #define TARGET_INIT_LIBFUNCS aarch64_init_libfuncs
@@ -18166,6 +18294,9 @@ aarch64_libgcc_floating_mode_supported_p
 
 #undef TARGET_SELECT_EARLY_REMAT_MODES
 #define TARGET_SELECT_EARLY_REMAT_MODES aarch64_select_early_remat_modes
+
+#undef TARGET_SPECULATION_SAFE_VALUE
+#define TARGET_SPECULATION_SAFE_VALUE aarch64_speculation_safe_value
 
 #if CHECKING_P
 #undef TARGET_RUN_TARGET_SELFTESTS

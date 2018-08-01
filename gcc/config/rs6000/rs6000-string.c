@@ -90,7 +90,9 @@ expand_block_clear (rtx operands[])
       machine_mode mode = BLKmode;
       rtx dest;
 
-      if (bytes >= 16 && TARGET_ALTIVEC && (align >= 128 || TARGET_EFFICIENT_UNALIGNED_VSX))
+      if (TARGET_ALTIVEC
+	  && ((bytes >= 16 && align >= 128)
+	      || (bytes >= 32 && TARGET_EFFICIENT_UNALIGNED_VSX)))
 	{
 	  clear_bytes = 16;
 	  mode = V4SImode;
@@ -1925,20 +1927,15 @@ expand_strn_compare (rtx operands[], int no_length)
 	  /* -m32 -mpowerpc64 results in word_mode being DImode even
 	     though otherwise it is 32-bit. The length arg to strncmp
 	     is a size_t which will be the same size as pointers.  */
-	  rtx len_rtx;
-	  if (TARGET_64BIT)
-	    len_rtx = gen_reg_rtx (DImode);
-	  else
-	    len_rtx = gen_reg_rtx (SImode);
-
-	  emit_move_insn (len_rtx, bytes_rtx);
+	  rtx len_rtx = gen_reg_rtx (Pmode);
+	  emit_move_insn (len_rtx, gen_int_mode (bytes, Pmode));
 
 	  tree fun = builtin_decl_explicit (BUILT_IN_STRNCMP);
 	  emit_library_call_value (XEXP (DECL_RTL (fun), 0),
 				   target, LCT_NORMAL, GET_MODE (target),
 				   force_reg (Pmode, src1_addr), Pmode,
 				   force_reg (Pmode, src2_addr), Pmode,
-				   len_rtx, GET_MODE (len_rtx));
+				   len_rtx, Pmode);
 	}
 
       rtx fin_ref = gen_rtx_LABEL_REF (VOIDmode, final_label);
@@ -2126,18 +2123,12 @@ expand_strn_compare (rtx operands[], int no_length)
 	}
       else
 	{
-	  rtx len_rtx;
-	  if (TARGET_64BIT)
-	    len_rtx = gen_reg_rtx (DImode);
-	  else
-	    len_rtx = gen_reg_rtx (SImode);
-
-	  emit_move_insn (len_rtx, GEN_INT (bytes - compare_length));
+	  rtx len_rtx = gen_reg_rtx (Pmode);
+	  emit_move_insn (len_rtx, gen_int_mode (bytes - compare_length, Pmode));
 	  tree fun = builtin_decl_explicit (BUILT_IN_STRNCMP);
 	  emit_library_call_value (XEXP (DECL_RTL (fun), 0),
 				   target, LCT_NORMAL, GET_MODE (target),
-				   src1, Pmode, src2, Pmode,
-				   len_rtx, GET_MODE (len_rtx));
+				   src1, Pmode, src2, Pmode, len_rtx, Pmode);
 	}
 
       rtx fin_ref = gen_rtx_LABEL_REF (VOIDmode, final_label);

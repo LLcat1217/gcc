@@ -1060,7 +1060,35 @@ finish_for_stmt (tree for_stmt)
 		     : &FOR_SCOPE (for_stmt));
   tree scope = *scope_ptr;
   *scope_ptr = NULL;
+
+  /* During parsing of the body, range for uses "__for_{range,begin,end} "
+     decl names to make those unaccessible by code in the body.
+     Change it to ones with underscore instead of space, so that it can
+     be inspected in the debugger.  */
+  tree range_for_decl[3] = { NULL_TREE, NULL_TREE, NULL_TREE };
+  gcc_assert (CPTI_FOR_BEGIN__IDENTIFIER == CPTI_FOR_RANGE__IDENTIFIER + 1
+	      && CPTI_FOR_END__IDENTIFIER == CPTI_FOR_RANGE__IDENTIFIER + 2
+	      && CPTI_FOR_RANGE_IDENTIFIER == CPTI_FOR_RANGE__IDENTIFIER + 3
+	      && CPTI_FOR_BEGIN_IDENTIFIER == CPTI_FOR_BEGIN__IDENTIFIER + 3
+	      && CPTI_FOR_END_IDENTIFIER == CPTI_FOR_END__IDENTIFIER + 3);
+  for (int i = 0; i < 3; i++)
+    {
+      tree id = cp_global_trees[CPTI_FOR_RANGE__IDENTIFIER + i];
+      if (IDENTIFIER_BINDING (id)
+	  && IDENTIFIER_BINDING (id)->scope == current_binding_level)
+	{
+	  range_for_decl[i] = IDENTIFIER_BINDING (id)->value;
+	  gcc_assert (VAR_P (range_for_decl[i])
+		      && DECL_ARTIFICIAL (range_for_decl[i]));
+	}
+    }
+
   add_stmt (do_poplevel (scope));
+
+  for (int i = 0; i < 3; i++)
+    if (range_for_decl[i])
+      DECL_NAME (range_for_decl[i])
+	= cp_global_trees[CPTI_FOR_RANGE_IDENTIFIER + i];
 }
 
 /* Begin a range-for-statement.  Returns a new RANGE_FOR_STMT.
@@ -1720,23 +1748,10 @@ force_paren_expr (tree expr)
     REF_PARENTHESIZED_P (expr) = true;
   else if (processing_template_decl)
     expr = build1 (PAREN_EXPR, TREE_TYPE (expr), expr);
-  else if (VAR_P (expr) && DECL_HARD_REGISTER (expr))
-    /* We can't bind a hard register variable to a reference.  */;
   else
     {
-      cp_lvalue_kind kind = lvalue_kind (expr);
-      if ((kind & ~clk_class) != clk_none)
-	{
-	  tree type = unlowered_expr_type (expr);
-	  bool rval = !!(kind & clk_rvalueref);
-	  type = cp_build_reference_type (type, rval);
-	  /* This inhibits warnings in, eg, cxx_mark_addressable
-	     (c++/60955).  */
-	  warning_sentinel s (extra_warnings);
-	  expr = build_static_cast (type, expr, tf_error);
-	  if (expr != error_mark_node)
-	    REF_PARENTHESIZED_P (expr) = true;
-	}
+      expr = build1 (VIEW_CONVERT_EXPR, TREE_TYPE (expr), expr);
+      REF_PARENTHESIZED_P (expr) = true;
     }
 
   return expr;
@@ -1764,6 +1779,9 @@ maybe_undo_parenthesized_ref (tree t)
       t = TREE_OPERAND (t, 0);
     }
   else if (TREE_CODE (t) == PAREN_EXPR)
+    t = TREE_OPERAND (t, 0);
+  else if (TREE_CODE (t) == VIEW_CONVERT_EXPR
+	   && REF_PARENTHESIZED_P (t))
     t = TREE_OPERAND (t, 0);
 
   return t;
@@ -7689,7 +7707,7 @@ static bool
 handle_omp_for_class_iterator (int i, location_t locus, enum tree_code code,
 			       tree declv, tree orig_declv, tree initv,
 			       tree condv, tree incrv, tree *body,
-			       tree *pre_body, tree &clauses, tree *lastp,
+			       tree *pre_body, tree &clauses,
 			       int collapse, int ordered)
 {
   tree diff, iter_init, iter_incr = NULL, last;
@@ -7993,7 +8011,8 @@ handle_omp_for_class_iterator (int i, location_t locus, enum tree_code code,
   TREE_VEC_ELT (initv, i) = init;
   TREE_VEC_ELT (condv, i) = cond;
   TREE_VEC_ELT (incrv, i) = incr;
-  *lastp = last;
+  TREE_VEC_ELT (orig_declv, i)
+    = tree_cons (TREE_VEC_ELT (orig_declv, i), last, NULL_TREE);
 
   return false;
 }
@@ -8012,7 +8031,6 @@ finish_omp_for (location_t locus, enum tree_code code, tree declv,
 {
   tree omp_for = NULL, orig_incr = NULL;
   tree decl = NULL, init, cond, incr;
-  tree last = NULL_TREE;
   location_t elocus;
   int i;
   int collapse = 1;
@@ -8179,7 +8197,7 @@ finish_omp_for (location_t locus, enum tree_code code, tree declv,
 	    }
 	  if (handle_omp_for_class_iterator (i, locus, code, declv, orig_declv,
 					     initv, condv, incrv, &body,
-					     &pre_body, clauses, &last,
+					     &pre_body, clauses,
 					     collapse, ordered))
 	    return NULL;
 	  continue;
@@ -8686,7 +8704,7 @@ finish_static_assert (tree condition, tree message, location_t location,
   /* Fold the expression and convert it to a boolean value. */
   condition = perform_implicit_conversion_flags (boolean_type_node, condition,
 						 complain, LOOKUP_NORMAL);
-  condition = fold_non_dependent_expr (condition);
+  condition = fold_non_dependent_expr (condition, complain);
 
   if (TREE_CODE (condition) == INTEGER_CST && !integer_zerop (condition))
     /* Do nothing; the condition is satisfied. */

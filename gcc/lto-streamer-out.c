@@ -134,9 +134,12 @@ tree_is_indexable (tree t)
   if ((TREE_CODE (t) == PARM_DECL || TREE_CODE (t) == RESULT_DECL)
       && DECL_CONTEXT (t))
     return variably_modified_type_p (TREE_TYPE (DECL_CONTEXT (t)), NULL_TREE);
-  /* IMPORTED_DECL is put into BLOCK and thus it never can be shared.  */
+  /* IMPORTED_DECL is put into BLOCK and thus it never can be shared.
+     We should no longer need to stream it.  */
   else if (TREE_CODE (t) == IMPORTED_DECL)
-    return false;
+    gcc_unreachable ();
+  else if (TREE_CODE (t) == LABEL_DECL)
+    return FORCED_LABEL (t) || DECL_NONLOCAL (t);
   else if (((VAR_P (t) && !TREE_STATIC (t))
 	    || TREE_CODE (t) == TYPE_DECL
 	    || TREE_CODE (t) == CONST_DECL
@@ -816,12 +819,6 @@ DFS::DFS_write_tree_body (struct output_block *ob,
 	DFS_follow_tree_edge (DECL_DEBUG_EXPR (expr));
     }
 
-  if (CODE_CONTAINS_STRUCT (code, TS_DECL_NON_COMMON))
-    {
-      if (TREE_CODE (expr) == TYPE_DECL)
-	DFS_follow_tree_edge (DECL_ORIGINAL_TYPE (expr));
-    }
-
   if (CODE_CONTAINS_STRUCT (code, TS_DECL_WITH_VIS))
     {
       /* Make sure we don't inadvertently set the assembler name.  */
@@ -835,7 +832,7 @@ DFS::DFS_write_tree_body (struct output_block *ob,
       DFS_follow_tree_edge (DECL_BIT_FIELD_TYPE (expr));
       DFS_follow_tree_edge (DECL_BIT_FIELD_REPRESENTATIVE (expr));
       DFS_follow_tree_edge (DECL_FIELD_BIT_OFFSET (expr));
-      DFS_follow_tree_edge (DECL_FCONTEXT (expr));
+      gcc_checking_assert (!DECL_FCONTEXT (expr));
     }
 
   if (CODE_CONTAINS_STRUCT (code, TS_FUNCTION_DECL))
@@ -904,14 +901,13 @@ DFS::DFS_write_tree_body (struct output_block *ob,
   if (CODE_CONTAINS_STRUCT (code, TS_BLOCK))
     {
       for (tree t = BLOCK_VARS (expr); t; t = TREE_CHAIN (t))
-	if (VAR_OR_FUNCTION_DECL_P (t)
-	    && DECL_EXTERNAL (t))
-	  /* We have to stream externals in the block chain as
-	     non-references.  See also
-	     tree-streamer-out.c:streamer_write_chain.  */
-	  DFS_write_tree (ob, expr_state, t, ref_p, false);
-	else
+	{
+	  /* We would have to stream externals in the block chain as
+	     non-references but we should have dropped them in
+	     free-lang-data.  */
+	  gcc_assert (!VAR_OR_FUNCTION_DECL_P (t) || !DECL_EXTERNAL (t));
 	  DFS_follow_tree_edge (t);
+	}
 
       DFS_follow_tree_edge (BLOCK_SUPERCONTEXT (expr));
       DFS_follow_tree_edge (BLOCK_ABSTRACT_ORIGIN (expr));
@@ -939,15 +935,10 @@ DFS::DFS_write_tree_body (struct output_block *ob,
 	DFS_follow_tree_edge (t);
       DFS_follow_tree_edge (BINFO_OFFSET (expr));
       DFS_follow_tree_edge (BINFO_VTABLE (expr));
-      DFS_follow_tree_edge (BINFO_VPTR_FIELD (expr));
 
-      /* The number of BINFO_BASE_ACCESSES has already been emitted in
-	 EXPR's bitfield section.  */
-      FOR_EACH_VEC_SAFE_ELT (BINFO_BASE_ACCESSES (expr), i, t)
-	DFS_follow_tree_edge (t);
-
-      /* Do not walk BINFO_INHERITANCE_CHAIN, BINFO_SUBVTT_INDEX
-	 and BINFO_VPTR_INDEX; these are used by C++ FE only.  */
+      /* Do not walk BINFO_INHERITANCE_CHAIN, BINFO_SUBVTT_INDEX,
+	 BINFO_BASE_ACCESSES and BINFO_VPTR_INDEX; these are used
+	 by C++ FE only.  */
     }
 
   if (CODE_CONTAINS_STRUCT (code, TS_CONSTRUCTOR))
@@ -1246,12 +1237,6 @@ hash_tree (struct streamer_tree_cache_d *cache, hash_map<tree, hashval_t> *map, 
          be able to call get_symbol_initial_value.  */
     }
 
-  if (CODE_CONTAINS_STRUCT (code, TS_DECL_NON_COMMON))
-    {
-      if (code == TYPE_DECL)
-	visit (DECL_ORIGINAL_TYPE (t));
-    }
-
   if (CODE_CONTAINS_STRUCT (code, TS_DECL_WITH_VIS))
     {
       if (DECL_ASSEMBLER_NAME_SET_P (t))
@@ -1264,7 +1249,6 @@ hash_tree (struct streamer_tree_cache_d *cache, hash_map<tree, hashval_t> *map, 
       visit (DECL_BIT_FIELD_TYPE (t));
       visit (DECL_BIT_FIELD_REPRESENTATIVE (t));
       visit (DECL_FIELD_BIT_OFFSET (t));
-      visit (DECL_FCONTEXT (t));
     }
 
   if (CODE_CONTAINS_STRUCT (code, TS_FUNCTION_DECL))
@@ -1332,11 +1316,9 @@ hash_tree (struct streamer_tree_cache_d *cache, hash_map<tree, hashval_t> *map, 
 	visit (b);
       visit (BINFO_OFFSET (t));
       visit (BINFO_VTABLE (t));
-      visit (BINFO_VPTR_FIELD (t));
-      FOR_EACH_VEC_SAFE_ELT (BINFO_BASE_ACCESSES (t), i, b)
-	visit (b);
       /* Do not walk BINFO_INHERITANCE_CHAIN, BINFO_SUBVTT_INDEX
-	 and BINFO_VPTR_INDEX; these are used by C++ FE only.  */
+	 BINFO_BASE_ACCESSES and BINFO_VPTR_INDEX; these are used
+	 by C++ FE only.  */
     }
 
   if (CODE_CONTAINS_STRUCT (code, TS_CONSTRUCTOR))
@@ -2056,6 +2038,14 @@ output_struct_function_base (struct output_block *ob, struct function *fn)
   stream_output_location (ob, &bp, fn->function_start_locus);
   stream_output_location (ob, &bp, fn->function_end_locus);
 
+  /* Save the instance discriminator if present.  */
+  int *instance_number_p = NULL;
+  if (decl_to_instance_map)
+    instance_number_p = decl_to_instance_map->get (fn->decl);
+  bp_pack_value (&bp, !!instance_number_p, 1);
+  if (instance_number_p)
+    bp_pack_value (&bp, *instance_number_p, sizeof (int) * CHAR_BIT);
+
   streamer_write_bitpack (&bp);
 }
 
@@ -2311,6 +2301,8 @@ copy_function_or_variable (struct symtab_node *node)
   struct lto_in_decl_state *in_state;
   struct lto_out_decl_state *out_state = lto_get_out_decl_state ();
 
+  if (streamer_dump_file)
+    fprintf (streamer_dump_file, "Copying section for %s\n", name);
   lto_begin_section (section_name, false);
   free (section_name);
 

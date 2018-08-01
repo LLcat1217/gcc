@@ -4163,7 +4163,7 @@ warn_for_null_address (location_t location, tree op, tsubst_flags_t complain)
       || TREE_NO_WARNING (op))
     return;
 
-  tree cop = fold_non_dependent_expr (op);
+  tree cop = fold_non_dependent_expr (op, complain);
 
   if (TREE_CODE (cop) == ADDR_EXPR
       && decl_with_nonnull_addr_p (TREE_OPERAND (cop, 0))
@@ -4480,7 +4480,7 @@ cp_build_binary_op (location_t location,
 	      || code1 == COMPLEX_TYPE || code1 == VECTOR_TYPE))
 	{
 	  enum tree_code tcode0 = code0, tcode1 = code1;
-	  tree cop1 = fold_non_dependent_expr (op1);
+	  tree cop1 = fold_non_dependent_expr (op1, complain);
 	  doing_div_or_mod = true;
 	  warn_for_div_by_zero (location, cop1);
 
@@ -4519,7 +4519,7 @@ cp_build_binary_op (location_t location,
     case TRUNC_MOD_EXPR:
     case FLOOR_MOD_EXPR:
       {
-	tree cop1 = fold_non_dependent_expr (op1);
+	tree cop1 = fold_non_dependent_expr (op1, complain);
 	doing_div_or_mod = true;
 	warn_for_div_by_zero (location, cop1);
       }
@@ -4614,7 +4614,7 @@ cp_build_binary_op (location_t location,
 	}
       else if (code0 == INTEGER_TYPE && code1 == INTEGER_TYPE)
 	{
-	  tree const_op1 = fold_non_dependent_expr (op1);
+	  tree const_op1 = fold_non_dependent_expr (op1, complain);
 	  if (TREE_CODE (const_op1) != INTEGER_CST)
 	    const_op1 = op1;
 	  result_type = type0;
@@ -4660,10 +4660,10 @@ cp_build_binary_op (location_t location,
 	}
       else if (code0 == INTEGER_TYPE && code1 == INTEGER_TYPE)
 	{
-	  tree const_op0 = fold_non_dependent_expr (op0);
+	  tree const_op0 = fold_non_dependent_expr (op0, complain);
 	  if (TREE_CODE (const_op0) != INTEGER_CST)
 	    const_op0 = op0;
-	  tree const_op1 = fold_non_dependent_expr (op1);
+	  tree const_op1 = fold_non_dependent_expr (op1, complain);
 	  if (TREE_CODE (const_op1) != INTEGER_CST)
 	    const_op1 = op1;
 	  result_type = type0;
@@ -4734,6 +4734,7 @@ cp_build_binary_op (location_t location,
       if (code0 == VECTOR_TYPE && code1 == VECTOR_TYPE)
 	goto vector_compare;
       if ((complain & tf_warning)
+	  && c_inhibit_evaluation_warnings == 0
 	  && (FLOAT_TYPE_P (type0) || FLOAT_TYPE_P (type1)))
 	warning (OPT_Wfloat_equal,
 		 "comparing floating point with == or != is unsafe");
@@ -5311,12 +5312,13 @@ cp_build_binary_op (location_t location,
 
       if (short_compare)
 	{
-	  /* We call shorten_compare only for diagnostic-reason.  */
-	  tree xop0 = fold_simple (op0), xop1 = fold_simple (op1),
-	       xresult_type = result_type;
+	  /* We call shorten_compare only for diagnostics.  */
+	  tree xop0 = fold_simple (op0);
+	  tree xop1 = fold_simple (op1);
+	  tree xresult_type = result_type;
 	  enum tree_code xresultcode = resultcode;
 	  shorten_compare (location, &xop0, &xop1, &xresult_type,
-			       &xresultcode);
+			   &xresultcode);
 	}
 
       if ((short_compare || code == MIN_EXPR || code == MAX_EXPR)
@@ -5349,6 +5351,7 @@ cp_build_binary_op (location_t location,
      otherwise, it will be given type RESULT_TYPE.  */
   if (! converted)
     {
+      warning_sentinel w (warn_sign_conversion, short_compare);
       if (TREE_TYPE (op0) != result_type)
 	op0 = cp_convert_and_check (result_type, op0, complain);
       if (TREE_TYPE (op1) != result_type)
@@ -5370,8 +5373,8 @@ cp_build_binary_op (location_t location,
       /* OP0 and/or OP1 might have side-effects.  */
       op0 = cp_save_expr (op0);
       op1 = cp_save_expr (op1);
-      op0 = fold_non_dependent_expr (op0);
-      op1 = fold_non_dependent_expr (op1);
+      op0 = fold_non_dependent_expr (op0, complain);
+      op1 = fold_non_dependent_expr (op1, complain);
       if (doing_div_or_mod
 	  && sanitize_flags_p (SANITIZE_DIVIDE | SANITIZE_FLOAT_DIVIDE))
 	{

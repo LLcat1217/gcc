@@ -551,12 +551,6 @@ extern int rs6000_vector_align[];
 #define TARGET_ALTIVEC_ABI rs6000_altivec_abi
 #define TARGET_LDBRX (TARGET_POPCNTD || rs6000_cpu == PROCESSOR_CELL)
 
-/* Define as 1 if we support multilibs for switching long double between IEEE
-   128-bit floating point and IBM extended double.  */
-#ifndef TARGET_IEEEQUAD_MULTILIB
-#define TARGET_IEEEQUAD_MULTILIB 0
-#endif
-
 /* ISA 2.01 allowed FCFID to be done in 32-bit, previously it was 64-bit only.
    Enable 32-bit fcfid's on any of the switches for newer ISA machines.  */
 #define TARGET_FCFID	(TARGET_POWERPC64				\
@@ -704,19 +698,6 @@ extern int rs6000_vector_align[];
 
 #define TARGET_FRSQRTE	(TARGET_HARD_FLOAT \
 			 && (TARGET_PPC_GFXOPT || VECTOR_UNIT_VSX_P (DFmode)))
-
-/* Conditions to allow TOC fusion for loading/storing integers.  */
-#define TARGET_TOC_FUSION_INT	(TARGET_P8_FUSION			\
-				 && TARGET_TOC_FUSION			\
-				 && (TARGET_CMODEL != CMODEL_SMALL)	\
-				 && TARGET_POWERPC64)
-
-/* Conditions to allow TOC fusion for loading/storing floating point.  */
-#define TARGET_TOC_FUSION_FP	(TARGET_P9_FUSION			\
-				 && TARGET_TOC_FUSION			\
-				 && (TARGET_CMODEL != CMODEL_SMALL)	\
-				 && TARGET_POWERPC64			\
-				 && TARGET_HARD_FLOAT)
 
 /* Macro to say whether we can do optimizations where we need to do parts of
    the calculation in 64-bit GPRs and then is transfered to the vector

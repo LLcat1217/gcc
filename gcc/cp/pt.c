@@ -155,10 +155,12 @@ static void tsubst_enum	(tree, tree, tree);
 static tree add_to_template_args (tree, tree);
 static tree add_outermost_template_args (tree, tree);
 static bool check_instantiated_args (tree, tree, tsubst_flags_t);
+static int check_non_deducible_conversion (tree, tree, int, int,
+					   struct conversion **, bool);
 static int maybe_adjust_types_for_deduction (unification_kind_t, tree*, tree*,
 					     tree);
 static int type_unification_real (tree, tree, tree, const tree *,
-				  unsigned int, int, unification_kind_t, int,
+				  unsigned int, int, unification_kind_t,
 				  vec<deferred_access_check, va_gc> **,
 				  bool);
 static void note_template_header (int);
@@ -798,10 +800,10 @@ check_specialization_namespace (tree tmpl)
     return true;
   else
     {
-      permerror (input_location,
-		 "specialization of %qD in different namespace", tmpl);
-      inform (DECL_SOURCE_LOCATION (tmpl),
-	      "  from definition of %q#D", tmpl);
+      if (permerror (input_location,
+		     "specialization of %qD in different namespace", tmpl))
+	inform (DECL_SOURCE_LOCATION (tmpl),
+		"  from definition of %q#D", tmpl);
       return false;
     }
 }
@@ -3862,6 +3864,17 @@ find_parameter_packs_r (tree *tp, int *walk_subtrees, void* data)
 	*walk_subtrees = 0;
 	return NULL_TREE;
       }
+
+    case IF_STMT:
+      cp_walk_tree (&IF_COND (t), &find_parameter_packs_r,
+		    ppd, ppd->visited);
+      cp_walk_tree (&THEN_CLAUSE (t), &find_parameter_packs_r,
+		    ppd, ppd->visited);
+      cp_walk_tree (&ELSE_CLAUSE (t), &find_parameter_packs_r,
+		    ppd, ppd->visited);
+      /* Don't walk into IF_STMT_EXTRA_ARGS.  */
+      *walk_subtrees = 0;
+      return NULL_TREE;
 
     default:
       return NULL_TREE;
@@ -9366,8 +9379,15 @@ lookup_template_class_1 (tree d1, tree arglist, tree in_decl, tree context,
 	  return found;
 	}
 
-      context = tsubst (DECL_CONTEXT (gen_tmpl), arglist,
-			complain, in_decl);
+      context = DECL_CONTEXT (gen_tmpl);
+      if (context && TYPE_P (context))
+	{
+	  context = tsubst_aggr_type (context, arglist, complain, in_decl, true);
+	  context = complete_type (context);
+	}
+      else
+	context = tsubst (context, arglist, complain, in_decl);
+
       if (context == error_mark_node)
 	return error_mark_node;
 
@@ -16265,7 +16285,12 @@ tsubst_omp_for_iterator (tree t, int i, tree declv, tree orig_declv,
   if (orig_declv && OMP_FOR_ORIG_DECLS (t))
     {
       tree o = TREE_VEC_ELT (OMP_FOR_ORIG_DECLS (t), i);
-      TREE_VEC_ELT (orig_declv, i) = RECUR (o);
+      if (TREE_CODE (o) == TREE_LIST)
+	TREE_VEC_ELT (orig_declv, i)
+	  = tree_cons (RECUR (TREE_PURPOSE (o)),
+		       RECUR (TREE_VALUE (o)), NULL_TREE);
+      else
+	TREE_VEC_ELT (orig_declv, i) = RECUR (o);
     }
 
   decl = TREE_OPERAND (init, 0);
@@ -16863,7 +16888,8 @@ tsubst_expr (tree t, tree args, tsubst_flags_t complain, tree in_decl,
 	/* Don't instantiate the THEN_CLAUSE. */;
       else
 	{
-	  bool inhibit = integer_zerop (fold_non_dependent_expr (tmp));
+	  tree folded = fold_non_dependent_expr (tmp, complain);
+	  bool inhibit = integer_zerop (folded);
 	  if (inhibit)
 	    ++c_inhibit_evaluation_warnings;
 	  RECUR (THEN_CLAUSE (t));
@@ -16876,7 +16902,8 @@ tsubst_expr (tree t, tree args, tsubst_flags_t complain, tree in_decl,
 	/* Don't instantiate the ELSE_CLAUSE. */;
       else if (ELSE_CLAUSE (t))
 	{
-	  bool inhibit = integer_nonzerop (fold_non_dependent_expr (tmp));
+	  tree folded = fold_non_dependent_expr (tmp, complain);
+	  bool inhibit = integer_nonzerop (folded);
 	  begin_else_clause (stmt);
 	  if (inhibit)
 	    ++c_inhibit_evaluation_warnings;
@@ -18517,7 +18544,7 @@ tsubst_copy_and_build (tree t,
       {
 	tree cond = RECUR (TREE_OPERAND (t, 0));
 	cond = mark_rvalue_use (cond);
-	tree folded_cond = fold_non_dependent_expr (cond);
+	tree folded_cond = fold_non_dependent_expr (cond, complain);
 	tree exp1, exp2;
 
 	if (TREE_CODE (folded_cond) == INTEGER_CST)
@@ -19356,6 +19383,58 @@ pack_deducible_p (tree parm, tree fn)
   return true;
 }
 
+/* Subroutine of fn_type_unification: check non-dependent parms for
+   convertibility.  */
+
+static int
+check_non_deducible_conversions (tree parms, const tree *args, unsigned nargs,
+				 tree fn, unification_kind_t strict, int flags,
+				 struct conversion **convs, bool explain_p)
+{
+  /* Non-constructor methods need to leave a conversion for 'this', which
+     isn't included in nargs here.  */
+  unsigned offset = (DECL_NONSTATIC_MEMBER_FUNCTION_P (fn)
+		     && !DECL_CONSTRUCTOR_P (fn));
+
+  for (unsigned ia = 0;
+       parms && parms != void_list_node && ia < nargs; )
+    {
+      tree parm = TREE_VALUE (parms);
+
+      if (TREE_CODE (parm) == TYPE_PACK_EXPANSION
+	  && (!TREE_CHAIN (parms)
+	      || TREE_CHAIN (parms) == void_list_node))
+	/* For a function parameter pack that occurs at the end of the
+	   parameter-declaration-list, the type A of each remaining
+	   argument of the call is compared with the type P of the
+	   declarator-id of the function parameter pack.  */
+	break;
+
+      parms = TREE_CHAIN (parms);
+
+      if (TREE_CODE (parm) == TYPE_PACK_EXPANSION)
+	/* For a function parameter pack that does not occur at the
+	   end of the parameter-declaration-list, the type of the
+	   parameter pack is a non-deduced context.  */
+	continue;
+
+      if (!uses_template_parms (parm))
+	{
+	  tree arg = args[ia];
+	  conversion **conv_p = convs ? &convs[ia+offset] : NULL;
+	  int lflags = conv_flags (ia, nargs, fn, arg, flags);
+
+	  if (check_non_deducible_conversion (parm, arg, strict, lflags,
+					      conv_p, explain_p))
+	    return 1;
+	}
+
+      ++ia;
+    }
+
+  return 0;
+}
+
 /* The FN is a TEMPLATE_DECL for a function.  ARGS is an array with
    NARGS elements of the arguments that are being used when calling
    it.  TARGS is a vector into which the deduced template arguments
@@ -19398,6 +19477,7 @@ fn_type_unification (tree fn,
 		     tree return_type,
 		     unification_kind_t strict,
 		     int flags,
+		     struct conversion **convs,
 		     bool explain_p,
 		     bool decltype_p)
 {
@@ -19602,7 +19682,7 @@ fn_type_unification (tree fn,
 
   ok = !type_unification_real (DECL_INNERMOST_TEMPLATE_PARMS (fn),
 			       full_targs, parms, args, nargs, /*subr=*/0,
-			       strict, flags, &checks, explain_p);
+			       strict, &checks, explain_p);
   if (!explain_p)
     pop_tinst_level ();
   if (!ok)
@@ -19635,6 +19715,12 @@ fn_type_unification (tree fn,
       unify_inconsistent_template_template_parameters (explain_p);
       goto fail;
     }
+
+  /* DR 1391: All parameters have args, now check non-dependent parms for
+     convertibility.  */
+  if (check_non_deducible_conversions (parms, args, nargs, fn, strict, flags,
+				       convs, explain_p))
+    goto fail;
 
   /* All is well so far.  Now, check:
 
@@ -19824,14 +19910,15 @@ maybe_adjust_types_for_deduction (unification_kind_t strict,
   return result;
 }
 
-/* Subroutine of unify_one_argument.  PARM is a function parameter of a
-   template which does contain any deducible template parameters; check if
+/* Subroutine of fn_type_unification.  PARM is a function parameter of a
+   template which doesn't contain any deducible template parameters; check if
    ARG is a suitable match for it.  STRICT, FLAGS and EXPLAIN_P are as in
    unify_one_argument.  */
 
 static int
 check_non_deducible_conversion (tree parm, tree arg, int strict,
-				int flags, bool explain_p)
+				int flags, struct conversion **conv_p,
+				bool explain_p)
 {
   tree type;
 
@@ -19843,17 +19930,23 @@ check_non_deducible_conversion (tree parm, tree arg, int strict,
   if (same_type_p (parm, type))
     return unify_success (explain_p);
 
+  tsubst_flags_t complain = (explain_p ? tf_warning_or_error : tf_none);
   if (strict == DEDUCE_CONV)
     {
-      if (can_convert_arg (type, parm, NULL_TREE, flags,
-			   explain_p ? tf_warning_or_error : tf_none))
+      if (can_convert_arg (type, parm, NULL_TREE, flags, complain))
 	return unify_success (explain_p);
     }
   else if (strict != DEDUCE_EXACT)
     {
-      if (can_convert_arg (parm, type,
-			   TYPE_P (arg) ? NULL_TREE : arg,
-			   flags, explain_p ? tf_warning_or_error : tf_none))
+      bool ok = false;
+      tree conv_arg = TYPE_P (arg) ? NULL_TREE : arg;
+      if (conv_p)
+	/* Avoid recalculating this in add_function_candidate.  */
+	ok = (*conv_p
+	      = good_conversion (parm, type, conv_arg, flags, complain));
+      else
+	ok = can_convert_arg (parm, type, conv_arg, flags, complain);
+      if (ok)
 	return unify_success (explain_p);
     }
 
@@ -20155,7 +20248,6 @@ type_unification_real (tree tparms,
 		       unsigned int xnargs,
 		       int subr,
 		       unification_kind_t strict,
-		       int flags,
 		       vec<deferred_access_check, va_gc> **checks,
 		       bool explain_p)
 {
@@ -20342,57 +20434,6 @@ type_unification_real (tree tparms,
 
 	  return unify_parameter_deduction_failure (explain_p, tparm);
 	}
-
-      /* DR 1391: All parameters have args, now check non-dependent parms for
-	 convertibility.  */
-      if (saw_undeduced < 2)
-	for (ia = 0, parms = xparms, args = xargs, nargs = xnargs;
-	     parms && parms != void_list_node && ia < nargs; )
-	  {
-	    parm = TREE_VALUE (parms);
-
-	    if (TREE_CODE (parm) == TYPE_PACK_EXPANSION
-		&& (!TREE_CHAIN (parms)
-		    || TREE_CHAIN (parms) == void_list_node))
-	      /* For a function parameter pack that occurs at the end of the
-		 parameter-declaration-list, the type A of each remaining
-		 argument of the call is compared with the type P of the
-		 declarator-id of the function parameter pack.  */
-	      break;
-
-	    parms = TREE_CHAIN (parms);
-
-	    if (TREE_CODE (parm) == TYPE_PACK_EXPANSION)
-	      /* For a function parameter pack that does not occur at the
-		 end of the parameter-declaration-list, the type of the
-		 parameter pack is a non-deduced context.  */
-	      continue;
-
-	    arg = args[ia];
-	    ++ia;
-
-	    if (uses_template_parms (parm))
-	      continue;
-	    if (check_non_deducible_conversion (parm, arg, strict, flags,
-						explain_p))
-	      return 1;
-
-	    if (BRACE_ENCLOSED_INITIALIZER_P (arg)
-		&& (TREE_CODE (parm) == ARRAY_TYPE || is_std_init_list (parm)))
-	      {
-		tree elt, elttype;
-		unsigned int i;
-
-		if (TREE_CODE (parm) == ARRAY_TYPE)
-		  elttype = TREE_TYPE (parm);
-		else
-		  elttype = TREE_VEC_ELT (CLASSTYPE_TI_ARGS (parm), 0);
-		FOR_EACH_CONSTRUCTOR_VALUE (CONSTRUCTOR_ELTS (arg), i, elt)
-		  if (check_non_deducible_conversion (elttype, elt, strict,
-						      flags, explain_p))
-		    return 1;
-	      }
-	  }
 
       /* Now substitute into the default template arguments.  */
       for (i = 0; i < ntparms; i++)
@@ -22017,7 +22058,7 @@ unify (tree tparms, tree targs, tree parm, tree arg, int strict,
 
 	if (type_unification_real (tparms, targs, TYPE_ARG_TYPES (parm),
 				   args, nargs, 1, DEDUCE_EXACT,
-				   LOOKUP_NORMAL, NULL, explain_p))
+				   NULL, explain_p))
 	  return 1;
 
 	if (flag_noexcept_type)
@@ -22082,7 +22123,7 @@ unify (tree tparms, tree targs, tree parm, tree arg, int strict,
 	 corresponding parameter is type-dependent.  Make any necessary
 	 adjustments based on whether arg is a reference.  */
       if (CONSTANT_CLASS_P (arg))
-	parm = fold_non_dependent_expr (parm);
+	parm = fold_non_dependent_expr (parm, complain);
       else if (REFERENCE_REF_P (arg))
 	{
 	  tree sub = TREE_OPERAND (arg, 0);
@@ -22661,7 +22702,8 @@ get_bindings (tree fn, tree decl, tree explicit_args, bool check_rettype)
 			   args, ix,
 			   (check_rettype || DECL_CONV_FN_P (fn)
 			    ? TREE_TYPE (decl_type) : NULL_TREE),
-			   DEDUCE_EXACT, LOOKUP_NORMAL, /*explain_p=*/false,
+			   DEDUCE_EXACT, LOOKUP_NORMAL, NULL,
+			   /*explain_p=*/false,
 			   /*decltype*/false)
       == error_mark_node)
     return NULL_TREE;
@@ -25849,7 +25891,7 @@ build_non_dependent_expr (tree expr)
       /* Don't do this during concept expansion either and for
          the same reason.  */
       && !expanding_concept ())
-    fold_non_dependent_expr (expr);
+    fold_non_dependent_expr (expr, tf_none);
 
   STRIP_ANY_LOCATION_WRAPPER (expr);
 
@@ -26797,7 +26839,7 @@ do_auto_deduction (tree type, tree init, tree auto_node,
 
       targs = make_tree_vec (TREE_VEC_LENGTH (tparms));
       int val = type_unification_real (tparms, targs, parms, &init, 1, 0,
-				       DEDUCE_CALL, LOOKUP_NORMAL,
+				       DEDUCE_CALL,
 				       NULL, /*explain_p=*/false);
       if (val > 0)
 	{
@@ -26816,7 +26858,7 @@ do_auto_deduction (tree type, tree init, tree auto_node,
 	      else
 		error ("unable to deduce %qT from %qE", type, init);
 	      type_unification_real (tparms, targs, parms, &init, 1, 0,
-				     DEDUCE_CALL, LOOKUP_NORMAL,
+				     DEDUCE_CALL,
 				     NULL, /*explain_p=*/true);
 	    }
 	  return error_mark_node;
