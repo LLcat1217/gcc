@@ -1,5 +1,5 @@
 /* Subroutines used for code generation on the EPIPHANY cpu.
-   Copyright (C) 1994-2018 Free Software Foundation, Inc.
+   Copyright (C) 1994-2019 Free Software Foundation, Inc.
    Contributed by Embecosm on behalf of Adapteva, Inc.
 
 This file is part of GCC.
@@ -2892,11 +2892,13 @@ epiphany_output_mi_thunk (FILE *file, tree thunk ATTRIBUTE_UNUSED,
 			  HOST_WIDE_INT vcall_offset,
 			  tree function)
 {
+  const char *fnname = IDENTIFIER_POINTER (DECL_ASSEMBLER_NAME (thunk));
   int this_regno
     = aggregate_value_p (TREE_TYPE (TREE_TYPE (function)), function) ? 1 : 0;
   const char *this_name = reg_names[this_regno];
   const char *fname;
 
+  assemble_start_function (thunk, fnname);
   /* We use IP and R16 as a scratch registers.  */
   gcc_assert (call_used_regs [GPR_IP]);
   gcc_assert (call_used_regs [GPR_16]);
@@ -2954,6 +2956,7 @@ epiphany_output_mi_thunk (FILE *file, tree thunk ATTRIBUTE_UNUSED,
       assemble_name (file, fname);
       fputc ('\n', file);
     }
+  assemble_end_function (thunk, fnname);
 }
 
 void

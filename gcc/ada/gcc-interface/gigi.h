@@ -126,7 +126,7 @@ extern tree make_aligning_type (tree type, unsigned int align, tree size,
    MAX_ALIGN alignment if the value is non-zero.  If so, return the new
    type; if not, return the original type.  */
 extern tree make_packable_type (tree type, bool in_record,
-				unsigned int max_align = 0);
+				unsigned int max_align);
 
 /* Given a type TYPE, return a new type whose size is appropriate for SIZE.
    If TYPE is the best type, return it.  Otherwise, make a new type.  We
@@ -213,9 +213,6 @@ extern void destroy_gnat_decl (void);
 
 /* Highest number in the front-end node table.  */
 extern int max_gnat_nodes;
-
-/* Current node being treated, in case abort called.  */
-extern Node_Id error_gnat_node;
 
 /* True when gigi is being called on an analyzed but unexpanded
    tree, and the only purpose of the call is to properly annotate
@@ -442,9 +439,11 @@ enum inline_status_t
   /* Inlining is suppressed for the subprogram.  */
   is_suppressed,
   /* No inlining is requested for the subprogram.  */
-  is_disabled,
+  is_default,
   /* Inlining is requested for the subprogram.  */
-  is_enabled,
+  is_requested,
+  /* Inlining is strongly requested for the subprogram.  */
+  is_prescribed,
   /* Inlining is required for the subprogram.  */
   is_required
 };
@@ -637,6 +636,9 @@ extern tree create_index_type (tree min, tree max, tree index,
 /* Return a subtype of TYPE with range MIN to MAX.  If TYPE is NULL,
    sizetype is used.  */
 extern tree create_range_type (tree type, tree min, tree max);
+
+/* Return an extra subtype of TYPE with range MIN to MAX.  */
+extern tree create_extra_subtype (tree type, tree min, tree max);
 
 /* Return a TYPE_DECL node suitable for the TYPE_STUB_DECL field of TYPE.
    NAME gives the name of the type to be used in the declaration.  */
@@ -835,7 +837,7 @@ extern unsigned int known_alignment (tree exp);
 
 /* Return true if VALUE is a multiple of FACTOR. FACTOR must be a power
    of 2.  */
-extern bool value_factor_p (tree value, HOST_WIDE_INT factor);
+extern bool value_factor_p (tree value, unsigned HOST_WIDE_INT factor);
 
 /* Build an atomic load for the underlying atomic object in SRC.  SYNC is
    true if the load requires synchronization.  */
@@ -1081,7 +1083,7 @@ call_is_atomic_load (tree exp)
 {
   tree fndecl = get_callee_fndecl (exp);
 
-  if (!(fndecl && DECL_BUILT_IN_CLASS (fndecl) == BUILT_IN_NORMAL))
+  if (!(fndecl && fndecl_built_in_p (fndecl, BUILT_IN_NORMAL)))
     return false;
 
   enum built_in_function code = DECL_FUNCTION_CODE (fndecl);
@@ -1136,7 +1138,9 @@ gnat_signed_type_for (tree type_node)
 static inline tree
 maybe_character_type (tree type)
 {
-  if (TYPE_STRING_FLAG (type) && !TYPE_UNSIGNED (type))
+  if (TREE_CODE (type) == INTEGER_TYPE
+      && TYPE_STRING_FLAG (type)
+      && !TYPE_UNSIGNED (type))
     type = gnat_unsigned_type_for (type);
 
   return type;
@@ -1149,7 +1153,9 @@ maybe_character_value (tree expr)
 {
   tree type = TREE_TYPE (expr);
 
-  if (TYPE_STRING_FLAG (type) && !TYPE_UNSIGNED (type))
+  if (TREE_CODE (type) == INTEGER_TYPE
+      && TYPE_STRING_FLAG (type)
+      && !TYPE_UNSIGNED (type))
     {
       type = gnat_unsigned_type_for (type);
       expr = convert (type, expr);

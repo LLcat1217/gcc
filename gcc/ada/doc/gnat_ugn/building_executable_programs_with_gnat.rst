@@ -1243,6 +1243,13 @@ Alphabetical List of All Switches
   :file:`scos.adb`.
 
 
+.. index:: -fgnat-encodings  (gcc)
+
+:switch:`-fgnat-encodings=[all|gdb|minimal]`
+  This switch controls the balance between GNAT encodings and standard DWARF
+  emitted in the debug information.
+
+
 .. index:: -flto  (gcc)
 
 :switch:`-flto[={n}]`
@@ -1692,12 +1699,43 @@ Alphabetical List of All Switches
     Maximum_Alignment          : Pos; -- Maximum permitted alignment
     Max_Unaligned_Field        : Pos; -- Maximum size for unaligned bit field
     Pointer_Size               : Pos; -- System.Address'Size
-    Short_Enums                : Nat; -- Short foreign convention enums?
+    Short_Enums                : Nat; -- Foreign enums use short size?
     Short_Size                 : Pos; -- Standard.Short_Integer'Size
     Strict_Alignment           : Nat; -- Strict alignment?
     System_Allocator_Alignment : Nat; -- Alignment for malloc calls
     Wchar_T_Size               : Pos; -- Interfaces.C.wchar_t'Size
     Words_BE                   : Nat; -- Words stored big-endian?
+
+  ``Bits_Per_Unit`` is the number of bits in a storage unit, the equivalent of
+  GCC macro ``BITS_PER_UNIT`` documented as follows: `Define this macro to be
+  the number of bits in an addressable storage unit (byte); normally 8.`
+
+  ``Bits_Per_Word`` is the number of bits in a machine word, the equivalent of
+  GCC macro ``BITS_PER_WORD`` documented as follows: `Number of bits in a word;
+  normally 32.`
+
+  ``Double_Scalar_Alignment`` is the alignment for a scalar whose size is two
+  machine words. It should be the same as the alignment for C ``long_long`` on
+  most targets.
+
+  ``Maximum_Alignment`` is the maximum alignment that the compiler might choose
+  by default for a type or object, which is also the maximum alignment that can
+  be specified in GNAT. It is computed for GCC backends as ``BIGGEST_ALIGNMENT
+  / BITS_PER_UNIT`` where GCC macro ``BIGGEST_ALIGNMENT`` is documented as
+  follows: `Biggest alignment that any data type can require on this machine,
+  in bits.`
+
+  ``Max_Unaligned_Field`` is the maximum size for unaligned bit field, which is
+  64 for the majority of GCC targets (but can be different on some targets like
+  AAMP).
+
+  ``Strict_Alignment`` is the equivalent of GCC macro ``STRICT_ALIGNMENT``
+  documented as follows: `Define this macro to be the value 1 if instructions
+  will fail to work if given data not on the nominal alignment. If instructions
+  will merely go slower in that case, define this macro as 0.`
+
+  ``System_Allocator_Alignment`` is the guaranteed alignment of data returned
+  by calls to ``malloc``.
 
 
   The format of the input file is as follows. First come the values of
@@ -1798,7 +1836,8 @@ Alphabetical List of All Switches
 .. index:: -gnatE  (gcc)
 
 :switch:`-gnatE`
-  Full dynamic elaboration checks.
+  Dynamic elaboration checking mode enabled. For further details see
+  :ref:`Elaboration_Order_Handling_in_GNAT`.
 
 
 .. index:: -gnatf  (gcc)
@@ -1840,8 +1879,9 @@ Alphabetical List of All Switches
 .. index:: -gnatH  (gcc)
 
 :switch:`-gnatH`
-  Legacy elaboration-checking mode enabled. When this switch is in effect, the
-  pre-18.x access-before-elaboration model becomes the de facto model.
+  Legacy elaboration-checking mode enabled. When this switch is in effect,
+  the pre-18.x access-before-elaboration model becomes the de facto model.
+  For further details see :ref:`Elaboration_Order_Handling_in_GNAT`.
 
 
 .. index:: -gnati  (gcc)
@@ -1897,7 +1937,8 @@ Alphabetical List of All Switches
   - Select statements
   - Synchronous task suspension
 
-  and does not emit compile-time diagnostics or run-time checks.
+  and does not emit compile-time diagnostics or run-time checks. For further
+  details see :ref:`Elaboration_Order_Handling_in_GNAT`.
 
 
 .. index:: -gnatk  (gcc)
@@ -2050,7 +2091,7 @@ Alphabetical List of All Switches
 
 .. index:: -gnatR  (gcc)
 
-:switch:`-gnatR[0|1|2|3][e][j][m][s]`
+:switch:`-gnatR[0|1|2|3|4][e][j][m][s]`
   Output representation information for declared types, objects and
   subprograms. Note that this switch is not allowed if a previous
   :switch:`-gnatD` switch has been given, since these two switches
@@ -2799,6 +2840,29 @@ of the pragma in the :title:`GNAT_Reference_manual`).
 
   This switch suppresses warnings for assertions where the compiler can tell at
   compile time that the assertion will fail.
+
+
+.. index:: -gnatw_a
+
+:switch:`-gnatw_a`
+  *Activate warnings on anonymous allocators.*
+
+  .. index:: Anonymous allocators
+
+  This switch activates warnings for allocators of anonymous access types,
+  which can involve run-time accessibility checks and lead to unexpected
+  accessibility violations. For more details on the rules involved, see
+  RM 3.10.2 (14).
+
+
+.. index:: -gnatw_A
+
+:switch:`-gnatw_A`
+  *Supress warnings on anonymous allocators.*
+
+  .. index:: Anonymous allocators
+
+  This switch suppresses warnings for anonymous access type allocators.
 
 
 .. index:: -gnatwb  (gcc)
@@ -4007,8 +4071,8 @@ of the pragma in the :title:`GNAT_Reference_manual`).
 :switch:`-gnatw.z`
   *Activate warnings for size not a multiple of alignment.*
 
-  This switch activates warnings for cases of record types with
-  specified ``Size`` and ``Alignment`` attributes where the
+  This switch activates warnings for cases of array and record types
+  with specified ``Size`` and ``Alignment`` attributes where the
   size is not a multiple of the alignment, resulting in an object
   size that is greater than the specified size. The default
   is that such warnings are generated.
@@ -4020,12 +4084,11 @@ of the pragma in the :title:`GNAT_Reference_manual`).
 :switch:`-gnatw.Z`
   *Suppress warnings for size not a multiple of alignment.*
 
-  This switch suppresses warnings for cases of record types with
-  specified ``Size`` and ``Alignment`` attributes where the
+  This switch suppresses warnings for cases of array and record types
+  with specified ``Size`` and ``Alignment`` attributes where the
   size is not a multiple of the alignment, resulting in an object
-  size that is greater than the specified size.
-  The warning can also be
-  suppressed by giving an explicit ``Object_Size`` value.
+  size that is greater than the specified size. The warning can also
+  be suppressed by giving an explicit ``Object_Size`` value.
 
 
 .. index:: -Wunused (gcc)
@@ -4653,6 +4716,16 @@ checks to be performed. The following checks are defined:
   allowed).
 
 
+.. index:: -gnatyD (gcc)
+
+:switch:`-gnatyD`
+  *Check declared identifiers in mixed case.*
+
+  Declared identifiers must be in mixed case, as in
+  This_Is_An_Identifier. Use -gnatyr in addition to ensure
+  that references match declarations.
+
+
 .. index:: -gnatye (gcc)
 
 :switch:`-gnatye`
@@ -5243,7 +5316,7 @@ Using ``gcc`` for Syntax Checking
 
   compiles file :file:`x.adb` in syntax-check-only mode. You can check a
   series of files in a single command
-  , and can use wild cards to specify such a group of files.
+  , and can use wildcards to specify such a group of files.
   Note that you must specify the :switch:`-c` (compile
   only) flag in addition to the :switch:`-gnats` flag.
 
@@ -5812,13 +5885,14 @@ Debugging Control
 
 .. index:: -gnatR  (gcc)
 
-:switch:`-gnatR[0|1|2|3][e][j][m][s]`
+:switch:`-gnatR[0|1|2|3|4][e][j][m][s]`
   This switch controls output from the compiler of a listing showing
   representation information for declared types, objects and subprograms.
   For :switch:`-gnatR0`, no information is output (equivalent to omitting
   the :switch:`-gnatR` switch). For :switch:`-gnatR1` (which is the default,
   so :switch:`-gnatR` with no parameter has the same effect), size and
   alignment information is listed for declared array and record types.
+
   For :switch:`-gnatR2`, size and alignment information is listed for all
   declared types and objects. The ``Linker_Section`` is also listed for any
   entity for which the ``Linker_Section`` is set explicitly or implicitly (the
@@ -5831,9 +5905,13 @@ Debugging Control
   n'th discriminant. See source files :file:`repinfo.ads/adb` in the
   GNAT sources for full details on the format of :switch:`-gnatR3` output.
 
+  For :switch:`-gnatR4`, information for relevant compiler-generated types
+  is also listed, i.e. when they are structurally part of other declared
+  types and objects.
+
   If the switch is followed by an ``e`` (e.g. :switch:`-gnatR2e`), then
   extended representation information for record sub-components of records
-  are included.
+  is included.
 
   If the switch is followed by an ``m`` (e.g. :switch:`-gnatRm`), then
   subprogram conventions and parameter passing mechanisms for all the
@@ -5846,8 +5924,8 @@ Debugging Control
   compiler sources.
 
   If the switch is followed by an ``s`` (e.g., :switch:`-gnatR3s`), then
-  the output is to a file with the name :file:`file.rep` where file is
-  the name of the corresponding source file, except if `j`` is also
+  the output is to a file with the name :file:`file.rep` where ``file`` is
+  the name of the corresponding source file, except if ``j`` is also
   specified, in which case the file name is :file:`file.json`.
 
   Note that it is possible for record components to have zero size. In
@@ -5878,6 +5956,36 @@ Debugging Control
   including ``gnatfind`` and ``gnatxref``. The :switch:`-gnatx` switch
   suppresses this information. This saves some space and may slightly
   speed up compilation, but means that these tools cannot be used.
+
+
+.. index:: -fgnat-encodings  (gcc)
+
+:switch:`-fgnat-encodings=[all|gdb|minimal]`
+  This switch controls the balance between GNAT encodings and standard DWARF
+  emitted in the debug information.
+
+  Historically, old debug formats like stabs were not powerful enough to
+  express some Ada types (for instance, variant records or fixed-point types).
+  To work around this, GNAT introduced proprietary encodings that embed the
+  missing information ("GNAT encodings").
+
+  Recent versions of the DWARF debug information format are now able to
+  correctly describe most of these Ada constructs ("standard DWARF"). As
+  third-party tools started to use this format, GNAT has been enhanced to
+  generate it. However, most tools (including GDB) are still relying on GNAT
+  encodings.
+
+  To support all tools, GNAT needs to be versatile about the balance between
+  generation of GNAT encodings and standard DWARF. This is what
+  :switch:`-fgnat-encodings` is about.
+
+  * ``=all``: Emit all GNAT encodings, and then emit as much standard DWARF as
+    possible so it does not conflict with GNAT encodings.
+  * ``=gdb``: Emit as much standard DWARF as possible as long as the current
+    GDB handles it. Emit GNAT encodings for the rest.
+  * ``=minimal``: Emit as much standard DWARF as possible and emit GNAT
+    encodings for the rest.
+
 
 .. _Exception_Handling_Control:
 
@@ -6286,7 +6394,9 @@ be presented in subsequent sections.
 .. index:: -f  (gnatbind)
 
 :switch:`-f{elab-order}`
-  Force elaboration order.
+  Force elaboration order. For further details see :ref:`Elaboration_Control`
+  and :ref:`Elaboration_Order_Handling_in_GNAT`.
+
 
 .. index:: -F  (gnatbind)
 
@@ -6306,15 +6416,22 @@ be presented in subsequent sections.
   Output usage (help) information.
 
 
-  .. index:: -H32  (gnatbind)
+.. index:: -H  (gnatbind)
+
+:switch:`-H`
+  Legacy elaboration order model enabled. For further details see
+  :ref:`Elaboration_Order_Handling_in_GNAT`.
+
+
+.. index:: -H32  (gnatbind)
 
 :switch:`-H32`
   Use 32-bit allocations for ``__gnat_malloc`` (and thus for access types).
   For further details see :ref:`Dynamic_Allocation_Control`.
 
 
-  .. index:: -H64  (gnatbind)
-  .. index:: __gnat_malloc
+.. index:: -H64  (gnatbind)
+.. index:: __gnat_malloc
 
 :switch:`-H64`
   Use 64-bit allocations for ``__gnat_malloc`` (and thus for access types).
@@ -6358,7 +6475,6 @@ be presented in subsequent sections.
   Rename generated main program from main to xyz. This option is
   supported on cross environments only.
 
-
   .. index:: -m  (gnatbind)
 
 :switch:`-m{n}`
@@ -6371,6 +6487,16 @@ be presented in subsequent sections.
   A value of zero means that no limit is enforced. The equal
   sign is optional.
 
+  .. index:: -minimal  (gnatbind)
+
+:switch:`-minimal`
+  Generate a binder file suitable for space-constrained applications. When
+  active, binder-generated objects not required for program operation are no
+  longer generated. **Warning:** this option comes with the following
+  limitations:
+
+  * Debugging will not work;
+  * Programs using GNAT.Compiler_Version will not link.
 
   .. index:: -n  (gnatbind)
 
@@ -6734,7 +6860,7 @@ Elaboration Control
 ^^^^^^^^^^^^^^^^^^^
 
 The following switches provide additional control over the elaboration
-order. For full details see :ref:`Elaboration_Order_Handling_in_GNAT`.
+order. For further details see :ref:`Elaboration_Order_Handling_in_GNAT`.
 
 
 .. index:: -f  (gnatbind)
@@ -6778,28 +6904,32 @@ order. For full details see :ref:`Elaboration_Order_Handling_in_GNAT`.
   ignored.
 
 
-  .. index:: -p  (gnatbind)
+.. index:: -p  (gnatbind)
 
 :switch:`-p`
-  Normally the binder attempts to choose an elaboration order that is
-  likely to minimize the likelihood of an elaboration order error resulting
-  in raising a ``Program_Error`` exception. This switch reverses the
-  action of the binder, and requests that it deliberately choose an order
-  that is likely to maximize the likelihood of an elaboration error.
-  This is useful in ensuring portability and avoiding dependence on
-  accidental fortuitous elaboration ordering.
+  Pessimistic elaboration order
 
-  Normally it only makes sense to use the :switch:`-p`
-  switch if dynamic
+  This switch is only applicable to the pre-20.x legacy elaboration models.
+  The post-20.x elaboration model uses a more informed approach of ordering
+  the units.
+
+  Normally the binder attempts to choose an elaboration order that is likely to
+  minimize the likelihood of an elaboration order error resulting in raising a
+  ``Program_Error`` exception. This switch reverses the action of the binder,
+  and requests that it deliberately choose an order that is likely to maximize
+  the likelihood of an elaboration error. This is useful in ensuring
+  portability and avoiding dependence on accidental fortuitous elaboration
+  ordering.
+
+  Normally it only makes sense to use the :switch:`-p` switch if dynamic
   elaboration checking is used (:switch:`-gnatE` switch used for compilation).
   This is because in the default static elaboration mode, all necessary
   ``Elaborate`` and ``Elaborate_All`` pragmas are implicitly inserted.
-  These implicit pragmas are still respected by the binder in
-  :switch:`-p` mode, so a
-  safe elaboration order is assured.
+  These implicit pragmas are still respected by the binder in :switch:`-p`
+  mode, so a safe elaboration order is assured.
 
-  Note that :switch:`-p` is not intended for
-  production use; it is more for debugging/experimental use.
+  Note that :switch:`-p` is not intended for production use; it is more for
+  debugging/experimental use.
 
 .. _Output_Control:
 

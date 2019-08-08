@@ -1,5 +1,5 @@
 /* Prints out tree in human readable form - GCC
-   Copyright (C) 1990-2018 Free Software Foundation, Inc.
+   Copyright (C) 1990-2019 Free Software Foundation, Inc.
 
 This file is part of GCC.
 
@@ -233,6 +233,15 @@ print_node (FILE *file, const char *prefix, tree node, int indent,
     return;
 
   code = TREE_CODE (node);
+
+  /* It is unsafe to look at any other fields of a node with ERROR_MARK or
+     invalid code.  */
+  if (code == ERROR_MARK || code >= MAX_TREE_CODES)
+    {
+      print_node_brief (file, prefix, node, indent);
+      return;
+    }
+
   tclass = TREE_CODE_CLASS (code);
 
   /* Don't get too deep in nesting.  If the user wants to see deeper,
@@ -246,13 +255,6 @@ print_node (FILE *file, const char *prefix, tree node, int indent,
     }
 
   if (indent > 8 && (tclass == tcc_type || tclass == tcc_declaration))
-    {
-      print_node_brief (file, prefix, node, indent);
-      return;
-    }
-
-  /* It is unsafe to look at any other fields of an ERROR_MARK node.  */
-  if (code == ERROR_MARK)
     {
       print_node_brief (file, prefix, node, indent);
       return;
@@ -427,7 +429,7 @@ print_node (FILE *file, const char *prefix, tree node, int indent,
 	fputs (" autoinline", file);
       if (code == FUNCTION_DECL && DECL_UNINLINABLE (node))
 	fputs (" uninlinable", file);
-      if (code == FUNCTION_DECL && DECL_BUILT_IN (node))
+      if (code == FUNCTION_DECL && fndecl_built_in_p (node))
 	fputs (" built-in", file);
       if (code == FUNCTION_DECL && DECL_STATIC_CHAIN (node))
 	fputs (" static-chain", file);
@@ -502,7 +504,7 @@ print_node (FILE *file, const char *prefix, tree node, int indent,
 	  print_node (file, "size", DECL_SIZE (node), indent + 4);
 	  print_node (file, "unit-size", DECL_SIZE_UNIT (node), indent + 4);
 
-	  if (code != FUNCTION_DECL || DECL_BUILT_IN (node))
+	  if (code != FUNCTION_DECL || fndecl_built_in_p (node))
 	    indent_to (file, indent + 3);
 
 	  if (DECL_USER_ALIGN (node))
@@ -514,7 +516,7 @@ print_node (FILE *file, const char *prefix, tree node, int indent,
 	    fprintf (file, " offset_align " HOST_WIDE_INT_PRINT_UNSIGNED,
 		     DECL_OFFSET_ALIGN (node));
 
-	  if (code == FUNCTION_DECL && DECL_BUILT_IN (node))
+	  if (code == FUNCTION_DECL && fndecl_built_in_p (node))
 	    {
 	      if (DECL_BUILT_IN_CLASS (node) == BUILT_IN_MD)
 		fprintf (file, " built-in: BUILT_IN_MD:%d", DECL_FUNCTION_CODE (node));
@@ -599,7 +601,7 @@ print_node (FILE *file, const char *prefix, tree node, int indent,
       if (TYPE_NO_FORCE_BLK (node))
 	fputs (" no-force-blk", file);
 
-      if (TYPE_STRING_FLAG (node))
+      if (code == ARRAY_TYPE && TYPE_STRING_FLAG (node))
 	fputs (" string-flag", file);
 
       if (TYPE_NEEDS_CONSTRUCTING (node))
@@ -611,6 +613,11 @@ print_node (FILE *file, const char *prefix, tree node, int indent,
 	   || code == ARRAY_TYPE)
 	  && TYPE_REVERSE_STORAGE_ORDER (node))
 	fputs (" reverse-storage-order", file);
+
+      if ((code == RECORD_TYPE
+	   || code == UNION_TYPE)
+	  && TYPE_CXX_ODR_P (node))
+	fputs (" cxx-odr-p", file);
 
       /* The transparent-union flag is used for different things in
 	 different nodes.  */

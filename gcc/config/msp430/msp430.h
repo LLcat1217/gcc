@@ -1,5 +1,5 @@
 /* GCC backend definitions for the TI MSP430 Processor
-   Copyright (C) 2012-2018 Free Software Foundation, Inc.
+   Copyright (C) 2012-2019 Free Software Foundation, Inc.
    Contributed by Red Hat.
 
    This file is part of GCC.
@@ -49,7 +49,8 @@ extern bool msp430x;
 
 /* -lgcc is included because crtend.o needs __mspabi_func_epilog_1.  */
 #undef  ENDFILE_SPEC
-#define ENDFILE_SPEC "%{!minrt:crtend.o%s} %{minrt:crtn-minrt.o%s}%{!minrt:crtn.o%s} -lgcc"
+#define ENDFILE_SPEC "%{!minrt:crtend.o%s} " \
+  "%{minrt:%:if-exists(crtn-minrt.o%s)}%{!minrt:%:if-exists(crtn.o%s)} -lgcc"
 
 #define ASM_SPEC "-mP " /* Enable polymorphic instructions.  */ \
   "%{mcpu=*:-mcpu=%*}%{!mcpu=*:%{mmcu=*:-mmcu=%*}} " /* Pass the CPU type on to the assembler.  */ \
@@ -66,6 +67,14 @@ extern bool msp430x;
    is enabled  (the GDB testsuite relies upon unused entities not being deleted).  */
 #define LINK_SPEC "%{mrelax:--relax} %{mlarge:%{!r:%{!g:--gc-sections}}} " \
   "%{mcode-region=*:--code-region=%*} %{mdata-region=*:--data-region=%*}"
+
+#define DRIVER_SELF_SPECS \
+  " %{!mlarge:%{mcode-region=*:%{mdata-region=*:%e-mcode-region and "	\
+    "-mdata-region require the large memory model (-mlarge)}}}" \
+  " %{!mlarge:%{mcode-region=*:"	\
+    "%e-mcode-region requires the large memory model (-mlarge)}}"	\
+  " %{!mlarge:%{mdata-region=*:"	\
+    "%e-mdata-region requires the large memory model (-mlarge)}}"
 
 extern const char * msp430_select_hwmult_lib (int, const char **);
 # define EXTRA_SPEC_FUNCTIONS				\
@@ -159,6 +168,11 @@ extern const char * msp430_select_hwmult_lib (int, const char **);
 #define PTR_SIZE			(TARGET_LARGE ? 4 : 2)
 #define	POINTERS_EXTEND_UNSIGNED	1
 
+/* TARGET_VTABLE_ENTRY_ALIGN defaults to POINTER_SIZE, which is 20 for
+   TARGET_LARGE.  Pointer alignment is always 16 for MSP430, so set explicitly
+   here.  */
+#define TARGET_VTABLE_ENTRY_ALIGN 16
+
 #define ADDR_SPACE_NEAR	1
 #define ADDR_SPACE_FAR	2
 
@@ -180,9 +194,11 @@ extern const char * msp430_select_hwmult_lib (int, const char **);
 /* Layout of Source Language Data Types */
 
 #undef  SIZE_TYPE
-#define SIZE_TYPE			(TARGET_LARGE ? "__int20 unsigned" : "unsigned int")
+#define SIZE_TYPE			(TARGET_LARGE \
+					 ? "__int20__ unsigned" \
+					 : "unsigned int")
 #undef  PTRDIFF_TYPE
-#define PTRDIFF_TYPE			(TARGET_LARGE ? "__int20" : "int")
+#define PTRDIFF_TYPE			(TARGET_LARGE ? "__int20__" : "int")
 #undef  WCHAR_TYPE
 #define WCHAR_TYPE			"long int"
 #undef  WCHAR_TYPE_SIZE
@@ -217,6 +233,28 @@ extern const char * msp430_select_hwmult_lib (int, const char **);
   "argptr"							\
 }
 
+/* Allow lowercase "r" to be used in register names instead of upper
+   case "R".  */
+#define ADDITIONAL_REGISTER_NAMES	\
+{					\
+    { "r0",  0 },			\
+    { "r1",  1 },			\
+    { "r2",  2 },			\
+    { "r3",  3 },			\
+    { "r4",  4 },			\
+    { "r5",  5 },			\
+    { "r6",  6 },			\
+    { "r7",  7 },			\
+    { "r8",  8 },			\
+    { "r9",  9 },			\
+    { "r10", 10 },			\
+    { "r11", 11 },			\
+    { "r12", 12 },			\
+    { "r13", 13 },			\
+    { "r14", 14 },			\
+    { "r15", 15 }			\
+}
+
 enum reg_class
 {
   NO_REGS,
@@ -241,10 +279,15 @@ enum reg_class
   0x00000000,		   \
   0x00001000,		   \
   0x00002000,		   \
-  0x0000fff2,		   \
+  0x0000fff3,		   \
   0x0001ffff		   \
 }
 
+/* GENERAL_REGS just means that the "g" and "r" constraints can use these
+   registers.
+   Even though R0 (PC) and R1 (SP) are not "general" in that they can be used
+   for any purpose by the register allocator, they are general in that they can
+   be used by any instruction in any addressing mode.  */
 #define GENERAL_REGS			GEN_REGS
 #define BASE_REG_CLASS  		GEN_REGS
 #define INDEX_REG_CLASS			GEN_REGS
@@ -259,7 +302,9 @@ enum reg_class
 
 #define FIRST_PSEUDO_REGISTER 		17
 
-#define REGNO_REG_CLASS(REGNO)          ((REGNO) < 17 \
+#define REGNO_REG_CLASS(REGNO)		(REGNO != 2 \
+					 && REGNO != 3 \
+					 && REGNO < 17 \
 					 ? GEN_REGS : NO_REGS)
 
 #define TRAMPOLINE_SIZE			4 /* FIXME */

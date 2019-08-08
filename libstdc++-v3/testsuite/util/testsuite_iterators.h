@@ -1,7 +1,7 @@
 // -*- C++ -*-
 // Iterator Wrappers for the C++ library testsuite.
 //
-// Copyright (C) 2004-2018 Free Software Foundation, Inc.
+// Copyright (C) 2004-2019 Free Software Foundation, Inc.
 //
 // This file is part of the GNU ISO C++ Library.  This library is free
 // software; you can redistribute it and/or modify it under the
@@ -344,7 +344,7 @@ namespace __gnu_test
    * @brief bidirectional_iterator wrapper for pointer
    *
    * This class takes a pointer and wraps it to provide exactly
-   * the requirements of a forward_iterator. It should not be
+   * the requirements of a bidirectional_iterator. It should not be
    * instantiated directly, but generated from a test_container
    */
   template<class T>
@@ -408,7 +408,7 @@ namespace __gnu_test
    * @brief random_access_iterator wrapper for pointer
    *
    * This class takes a pointer and wraps it to provide exactly
-   * the requirements of a forward_iterator. It should not be
+   * the requirements of a random_access_iterator. It should not be
    * instantiated directly, but generated from a test_container
    */
   template<class T>
@@ -589,6 +589,10 @@ namespace __gnu_test
     ItType<T>
     end()
     { return it(bounds.last); }
+
+    std::size_t
+    size() const
+    { return bounds.last - bounds.first; }
   };
 }
 #endif

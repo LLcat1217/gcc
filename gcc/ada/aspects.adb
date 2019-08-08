@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 B o d y                                  --
 --                                                                          --
---          Copyright (C) 2010-2018, Free Software Foundation, Inc.         --
+--          Copyright (C) 2010-2019, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -225,7 +225,10 @@ package body Aspects is
             Owner := Root_Type (Owner);
          end if;
 
-         if Is_Private_Type (Owner) and then Present (Full_View (Owner)) then
+         if Is_Private_Type (Owner)
+            and then Present (Full_View (Owner))
+            and then not Operational_Aspect (A)
+         then
             Owner := Full_View (Owner);
          end if;
       end if;

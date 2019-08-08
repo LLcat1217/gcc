@@ -1,6 +1,6 @@
 /* Functions for writing LTO sections.
 
-   Copyright (C) 2009-2018 Free Software Foundation, Inc.
+   Copyright (C) 2009-2019 Free Software Foundation, Inc.
    Contributed by Kenneth Zadeck <zadeck@naturalbridge.com>
 
 This file is part of GCC.
@@ -285,8 +285,6 @@ lto_destroy_simple_output_block (struct lto_simple_output_block *ob)
   /* Write the header which says how to decode the pieces of the
      t.  */
   memset (&header, 0, sizeof (struct lto_simple_header));
-  header.major_version = LTO_major_version;
-  header.minor_version = LTO_minor_version;
   header.main_size = ob->main_stream->total_size;
   lto_write_data (&header, sizeof header);
 

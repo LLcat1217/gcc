@@ -1,4 +1,4 @@
-#  Copyright (C) 2003-2018 Free Software Foundation, Inc.
+#  Copyright (C) 2003-2019 Free Software Foundation, Inc.
 #  Contributed by Kelley Cook, June 2004.
 #  Original code from Neil Booth, May 2003.
 #
@@ -156,7 +156,6 @@ function switch_bit_fields (flags)
 	  hwi_flag \
 	  flag_init("ToLower", flags) \
 	  flag_init("Report", flags) \
-	  flag_init("Deprecated", flags) \
 	  byte_size_flag
 
 	sub(", $", "", result)

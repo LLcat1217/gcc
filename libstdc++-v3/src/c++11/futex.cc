@@ -1,6 +1,6 @@
 // futex -*- C++ -*-
 
-// Copyright (C) 2015-2018 Free Software Foundation, Inc.
+// Copyright (C) 2015-2019 Free Software Foundation, Inc.
 //
 // This file is part of the GNU ISO C++ Library.  This library is free
 // software; you can redistribute it and/or modify it under the
@@ -53,7 +53,7 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
 	// here on errors is abort.
 	int ret __attribute__((unused));
 	ret = syscall (SYS_futex, __addr, futex_wait_op, __val, nullptr);
-	_GLIBCXX_DEBUG_ASSERT(ret == 0 || errno == EINTR || errno == EAGAIN);
+	__glibcxx_assert(ret == 0 || errno == EINTR || errno == EAGAIN);
 	return true;
       }
     else
@@ -75,8 +75,8 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
 
 	if (syscall (SYS_futex, __addr, futex_wait_op, __val, &rt) == -1)
 	  {
-	    _GLIBCXX_DEBUG_ASSERT(errno == EINTR || errno == EAGAIN
-				  || errno == ETIMEDOUT);
+	    __glibcxx_assert(errno == EINTR || errno == EAGAIN
+			     || errno == ETIMEDOUT);
 	    if (errno == ETIMEDOUT)
 	      return false;
 	  }

@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 S p e c                                  --
 --                                                                          --
---          Copyright (C) 1992-2018, Free Software Foundation, Inc.         --
+--          Copyright (C) 1992-2019, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -320,7 +320,7 @@ package Einfo is
 --  an attempt to set the attribute on a subtype will raise an assert error.
 
 --  Other attributes are noted as applying to the [implementation base type
---  only].  These are representation attributes which must always apply to a
+--  only]. These are representation attributes which must always apply to a
 --  full non-private type, and where the attributes are always on the full
 --  type. The attribute can be referenced on a subtype (and automatically
 --  retrieves the value from the implementation base type). However, it is an
@@ -1090,10 +1090,10 @@ package Einfo is
 --       to the spec as possible.
 
 --    Elaboration_Entity (Node13)
---       Defined in generic and non-generic package and subprogram entities.
---       This is a counter associated with the unit that is initially set to
---       zero, is incremented when an elaboration request for the unit is
---       made, and is decremented when a finalization request for the unit
+--       Defined in entry, entry family, [generic] package, and subprogram
+--       entities. This is a counter associated with the unit that is initially
+--       set to zero, is incremented when an elaboration request for the unit
+--       is made, and is decremented when a finalization request for the unit
 --       is made. This is used for three purposes. First, it is used to
 --       implement access before elaboration checks (the counter must be
 --       non-zero to call a subprogram at elaboration time). Second, it is
@@ -1110,9 +1110,9 @@ package Einfo is
 --       is elaboration code), but is simply not used for any purpose.
 
 --    Elaboration_Entity_Required (Flag174)
---       Defined in generic and non-generic package and subprogram entities.
---       Set only if Elaboration_Entity is non-Empty to indicate that the
---       counter is required to be non-zero even if there is no other
+--       Defined in entry, entry family, [generic] package, and subprogram
+--       entities. Set only if Elaboration_Entity is non-Empty to indicate that
+--       the counter is required to be non-zero even if there is no other
 --       elaboration code. This occurs when the Elaboration_Entity counter
 --       is used for access before elaboration checks. If the counter is
 --       only used to prevent multiple execution of the elaboration code,
@@ -2355,7 +2355,7 @@ package Einfo is
 --    Is_Bit_Packed_Array (Flag122) [implementation base type only]
 --       Defined in all entities. This flag is set for a packed array type that
 --       is bit-packed (i.e. the component size is known by the front end and
---       is in the range 1-7, 9-15, 17-31, or 33-63). Is_Packed is always set
+--       is in the range 1-63 but not a multiple of 8). Is_Packed is always set
 --       if Is_Bit_Packed_Array is set, but it is possible for Is_Packed to be
 --       set without Is_Bit_Packed_Array if the component size is not known by
 --       the front-end or for the case of an array having one or more index
@@ -2607,12 +2607,6 @@ package Einfo is
 
 --    Is_Formal_Subprogram (Flag111)
 --       Defined in all entities. Set for generic formal subprograms.
-
---    Is_For_Access_Subtype (Flag118)
---       Defined in E_Private_Subtype and E_Record_Subtype entities. Means the
---       sole purpose of the type is to be designated by an Access_Subtype and
---       hence should not be expanded into components because the type may not
---       have been found or frozen yet.
 
 --    Is_Frozen (Flag4)
 --       Defined in all type and subtype entities. Set if type or subtype has
@@ -3020,9 +3014,9 @@ package Einfo is
 --       out that the component size doesn't require packing, the Is_Packed
 --       flag gets turned off.
 
---       In the bit-packed array case (i.e. component size is known at compile
---       time and is 1-7, 9-15, 17-31 or 33-63), Is_Bit_Packed_Array will be
---       set once the array type is frozen.
+--       In the bit-packed array case (i.e. the component size is known by the
+--       front end and is in the range 1-63 but not a multiple of 8), then the
+--       Is_Bit_Packed_Array flag will be set once the array type is frozen.
 --
 --    Is_Packed_Array (synth)
 --       Applies to all entities, true if entity is for a packed array.
@@ -3269,7 +3263,7 @@ package Einfo is
 --       a task interface, or if it is derived from task interfaces.
 
 --    Is_Task_Record_Type (synthesized)
---       Applies to all entities. True if Is_Concurrent_Record_Type
+--       Applies to all entities, true if Is_Concurrent_Record_Type is true and
 --       Corresponding_Concurrent_Type is a task type.
 
 --    Is_Task_Type (synthesized)
@@ -3779,7 +3773,7 @@ package Einfo is
 
 --    Optimize_Alignment_Space (Flag241)
 --       Defined in type, subtype, variable, and constant entities. This
---       flag records that the type or object is to be layed out in a manner
+--       flag records that the type or object is to be laid out in a manner
 --       consistent with Optimize_Alignment (Space) mode. The compiler and
 --       binder ensure a consistent view of any given type or object. If pragma
 --       Optimize_Alignment (Off) mode applies to the type/object, then neither
@@ -3787,7 +3781,7 @@ package Einfo is
 
 --    Optimize_Alignment_Time (Flag242)
 --       Defined in type, subtype, variable, and constant entities. This
---       flag records that the type or object is to be layed out in a manner
+--       flag records that the type or object is to be laid out in a manner
 --       consistent with Optimize_Alignment (Time) mode. The compiler and
 --       binder ensure a consistent view of any given type or object. If pragma
 --       Optimize_Alignment (Off) mode applies to the type/object, then neither
@@ -4005,17 +3999,6 @@ package Einfo is
 --       declaration of the type is seen. Subprograms that have such an
 --       access parameter are also placed in the list of private_dependents.
 
---    Private_View (Node22)
---       For each private type, three entities are allocated, the private view,
---       the full view, and the shadow entity. The shadow entity contains a
---       copy of the private view and is used for restoring the proper private
---       view after a region in which the full view is visible (and is copied
---       into the entity normally used for the private view during this period
---       of visibility). The Private_View field is self-referential when the
---       private view lives in its normal entity, but in the copy that is made
---       in the shadow entity, it points to the proper location in which to
---       restore the private view saved in the shadow.
-
 --    Protected_Body_Subprogram (Node11)
 --       Defined in protected operations. References the entity for the
 --       subprogram which implements the body of the operation.
@@ -4144,7 +4127,7 @@ package Einfo is
 --       Defined in generic subprograms, generic packages, and their
 --       instances. Also defined in the instances of the corresponding
 --       bodies. Denotes the renaming map (generic entities => instance
---       entities) used to construct the instance by givin an index into
+--       entities) used to construct the instance by giving an index into
 --       the tables used to represent these maps. See Sem_Ch12 for further
 --       details. The maps for package instances are also used when the
 --       instance is the actual corresponding to a formal package.
@@ -4263,18 +4246,6 @@ package Einfo is
 --       and procedures). Set to True when secondary stack is used to hold the
 --       returned value of a function and thus should not be released on scope
 --       exit.
-
---    Shadow_Entities (List14)
---       Defined in package and generic package entities. Points to a list
---       of entities that correspond to private types. For each private type
---       a shadow entity is created that holds a copy of the private view.
---       In regions of the program where the full views of these private
---       entities are visible, the full view is copied into the entity that
---       is normally used to hold the private view, but the shadow entity
---       copy is unchanged. The shadow entities are then used to restore the
---       original private views at the end of the region. This list is a
---       standard format list (i.e. First (Shadow_Entities) is the first
---       entry and subsequent entries are obtained using Next.
 
 --    Shared_Var_Procs_Instance (Node22)
 --       Defined in variables. Set non-Empty only if Is_Shared_Passive is
@@ -4513,7 +4484,7 @@ package Einfo is
 --    Suppress_Initialization (Flag105)
 --       Defined in all variable, type and subtype entities. If set for a base
 --       type, then the generation of initialization procedures is suppressed
---       for the type. Any other implicit initialiation (e.g. from the use of
+--       for the type. Any other implicit initialization (e.g. from the use of
 --       pragma Initialize_Scalars) is also suppressed if this flag is set for
 --       either the subtype in question, or for the base type. For variables,
 --       this flag suppresses all implicit initialization for the object, even
@@ -6058,6 +6029,7 @@ package Einfo is
    --  E_Entry_Family
    --    Protected_Body_Subprogram           (Node11)
    --    Barrier_Function                    (Node12)
+   --    Elaboration_Entity                  (Node13)
    --    Postconditions_Proc                 (Node14)
    --    Entry_Parameters_Type               (Node15)
    --    First_Entity                        (Node17)
@@ -6322,7 +6294,6 @@ package Einfo is
    --    Underlying_Full_View                (Node19)
    --    Last_Entity                         (Node20)
    --    Discriminant_Constraint             (Elist21)
-   --    Private_View                        (Node22)
    --    Stored_Constraint                   (Elist23)
    --    Has_Completion                      (Flag26)
    --    (plus type attributes)
@@ -6401,7 +6372,6 @@ package Einfo is
    --    Generic_Homonym                     (Node11)   (generic case only)
    --    Associated_Formal_Package           (Node12)
    --    Elaboration_Entity                  (Node13)
-   --    Shadow_Entities                     (List14)
    --    Related_Instance                    (Node15)   (non-generic case only)
    --    First_Private_Entity                (Node16)
    --    First_Entity                        (Node17)
@@ -6479,11 +6449,9 @@ package Einfo is
    --    Underlying_Full_View                (Node19)
    --    Last_Entity                         (Node20)
    --    Discriminant_Constraint             (Elist21)
-   --    Private_View                        (Node22)
    --    Stored_Constraint                   (Elist23)
    --    Has_Completion                      (Flag26)
    --    Is_Controlled_Active                (Flag42)   (base type only)
-   --    Is_For_Access_Subtype               (Flag118)  (subtype only)
    --    (plus type attributes)
 
    --  E_Procedure
@@ -6660,7 +6628,6 @@ package Einfo is
    --    Underlying_Full_View                (Node19)
    --    Last_Entity                         (Node20)
    --    Discriminant_Constraint             (Elist21)
-   --    Private_View                        (Node22)
    --    Stored_Constraint                   (Elist23)
    --    Interfaces                          (Elist25)
    --    Predicated_Parent                   (Node38)   (subtype only)
@@ -7337,7 +7304,6 @@ package Einfo is
    function Is_Exported                         (Id : E) return B;
    function Is_Finalized_Transient              (Id : E) return B;
    function Is_First_Subtype                    (Id : E) return B;
-   function Is_For_Access_Subtype               (Id : E) return B;
    function Is_Frozen                           (Id : E) return B;
    function Is_Generic_Instance                 (Id : E) return B;
    function Is_Hidden                           (Id : E) return B;
@@ -7475,7 +7441,6 @@ package Einfo is
    function Prival                              (Id : E) return E;
    function Prival_Link                         (Id : E) return E;
    function Private_Dependents                  (Id : E) return L;
-   function Private_View                        (Id : E) return N;
    function Protected_Body_Subprogram           (Id : E) return E;
    function Protected_Formal                    (Id : E) return E;
    function Protected_Subprogram                (Id : E) return N;
@@ -7508,7 +7473,6 @@ package Einfo is
    function Scale_Value                         (Id : E) return U;
    function Scope_Depth_Value                   (Id : E) return U;
    function Sec_Stack_Needed_For_Return         (Id : E) return B;
-   function Shadow_Entities                     (Id : E) return S;
    function Shared_Var_Procs_Instance           (Id : E) return E;
    function Size_Check_Code                     (Id : E) return N;
    function Size_Depends_On_Discriminant        (Id : E) return B;
@@ -8040,7 +8004,6 @@ package Einfo is
    procedure Set_Is_Exported                     (Id : E; V : B := True);
    procedure Set_Is_Finalized_Transient          (Id : E; V : B := True);
    procedure Set_Is_First_Subtype                (Id : E; V : B := True);
-   procedure Set_Is_For_Access_Subtype           (Id : E; V : B := True);
    procedure Set_Is_Formal_Subprogram            (Id : E; V : B := True);
    procedure Set_Is_Frozen                       (Id : E; V : B := True);
    procedure Set_Is_Generic_Actual_Subprogram    (Id : E; V : B := True);
@@ -8181,7 +8144,6 @@ package Einfo is
    procedure Set_Prival                          (Id : E; V : E);
    procedure Set_Prival_Link                     (Id : E; V : E);
    procedure Set_Private_Dependents              (Id : E; V : L);
-   procedure Set_Private_View                    (Id : E; V : N);
    procedure Set_Protected_Body_Subprogram       (Id : E; V : E);
    procedure Set_Protected_Formal                (Id : E; V : E);
    procedure Set_Protected_Subprogram            (Id : E; V : N);
@@ -8214,7 +8176,6 @@ package Einfo is
    procedure Set_Scale_Value                     (Id : E; V : U);
    procedure Set_Scope_Depth_Value               (Id : E; V : U);
    procedure Set_Sec_Stack_Needed_For_Return     (Id : E; V : B := True);
-   procedure Set_Shadow_Entities                 (Id : E; V : S);
    procedure Set_Shared_Var_Procs_Instance       (Id : E; V : E);
    procedure Set_Size_Check_Code                 (Id : E; V : N);
    procedure Set_Size_Depends_On_Discriminant    (Id : E; V : B := True);
@@ -8889,7 +8850,6 @@ package Einfo is
    pragma Inline (Is_First_Subtype);
    pragma Inline (Is_Fixed_Point_Type);
    pragma Inline (Is_Floating_Point_Type);
-   pragma Inline (Is_For_Access_Subtype);
    pragma Inline (Is_Formal);
    pragma Inline (Is_Formal_Object);
    pragma Inline (Is_Formal_Subprogram);
@@ -9058,7 +9018,6 @@ package Einfo is
    pragma Inline (Prival);
    pragma Inline (Prival_Link);
    pragma Inline (Private_Dependents);
-   pragma Inline (Private_View);
    pragma Inline (Protected_Body_Subprogram);
    pragma Inline (Protected_Formal);
    pragma Inline (Protected_Subprogram);
@@ -9092,7 +9051,6 @@ package Einfo is
    pragma Inline (Scale_Value);
    pragma Inline (Scope_Depth_Value);
    pragma Inline (Sec_Stack_Needed_For_Return);
-   pragma Inline (Shadow_Entities);
    pragma Inline (Shared_Var_Procs_Instance);
    pragma Inline (Size_Check_Code);
    pragma Inline (Size_Depends_On_Discriminant);
@@ -9408,7 +9366,6 @@ package Einfo is
    pragma Inline (Set_Is_Exported);
    pragma Inline (Set_Is_Finalized_Transient);
    pragma Inline (Set_Is_First_Subtype);
-   pragma Inline (Set_Is_For_Access_Subtype);
    pragma Inline (Set_Is_Formal_Subprogram);
    pragma Inline (Set_Is_Frozen);
    pragma Inline (Set_Is_Generic_Actual_Subprogram);
@@ -9551,7 +9508,6 @@ package Einfo is
    pragma Inline (Set_Prival);
    pragma Inline (Set_Prival_Link);
    pragma Inline (Set_Private_Dependents);
-   pragma Inline (Set_Private_View);
    pragma Inline (Set_Protected_Body_Subprogram);
    pragma Inline (Set_Protected_Formal);
    pragma Inline (Set_Protected_Subprogram);
@@ -9584,7 +9540,6 @@ package Einfo is
    pragma Inline (Set_Scale_Value);
    pragma Inline (Set_Scope_Depth_Value);
    pragma Inline (Set_Sec_Stack_Needed_For_Return);
-   pragma Inline (Set_Shadow_Entities);
    pragma Inline (Set_Shared_Var_Procs_Instance);
    pragma Inline (Set_Size_Check_Code);
    pragma Inline (Set_Size_Depends_On_Discriminant);

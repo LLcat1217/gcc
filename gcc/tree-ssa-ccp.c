@@ -1,5 +1,5 @@
 /* Conditional constant propagation pass for the GNU compiler.
-   Copyright (C) 2000-2018 Free Software Foundation, Inc.
+   Copyright (C) 2000-2019 Free Software Foundation, Inc.
    Adapted from original RTL SSA-CCP by Daniel Berlin <dberlin@dberlin.org>
    Adapted to GIMPLE trees by Diego Novillo <dnovillo@redhat.com>
 
@@ -157,7 +157,8 @@ typedef enum
   VARYING
 } ccp_lattice_t;
 
-struct ccp_prop_value_t {
+class ccp_prop_value_t {
+public:
     /* Lattice value.  */
     ccp_lattice_t lattice_val;
 
@@ -807,7 +808,7 @@ surely_varying_stmt_p (gimple *stmt)
       tree fndecl, fntype = gimple_call_fntype (stmt);
       if (!gimple_call_lhs (stmt)
 	  || ((fndecl = gimple_call_fndecl (stmt)) != NULL_TREE
-	      && !DECL_BUILT_IN (fndecl)
+	      && !fndecl_built_in_p (fndecl)
 	      && !lookup_attribute ("assume_aligned",
 				    TYPE_ATTRIBUTES (fntype))
 	      && !lookup_attribute ("alloc_align",
@@ -1119,7 +1120,7 @@ ccp_propagate::visit_phi (gphi *phi)
       if (dump_file && (dump_flags & TDF_DETAILS))
 	{
 	  fprintf (dump_file,
-	      "\n    Argument #%d (%d -> %d %sexecutable)\n",
+	      "\tArgument #%d (%d -> %d %sexecutable)\n",
 	      i, e->src->index, e->dest->index,
 	      (e->flags & EDGE_EXECUTABLE) ? "" : "not ");
 	}
@@ -1960,6 +1961,35 @@ evaluate_stmt (gimple *stmt)
 		break;
 	      }
 
+	    case BUILT_IN_BSWAP16:
+	    case BUILT_IN_BSWAP32:
+	    case BUILT_IN_BSWAP64:
+	      val = get_value_for_expr (gimple_call_arg (stmt, 0), true);
+	      if (val.lattice_val == UNDEFINED)
+		break;
+	      else if (val.lattice_val == CONSTANT
+		       && val.value
+		       && TREE_CODE (val.value) == INTEGER_CST)
+		{
+		  tree type = TREE_TYPE (gimple_call_lhs (stmt));
+		  int prec = TYPE_PRECISION (type);
+		  wide_int wval = wi::to_wide (val.value);
+		  val.value
+		    = wide_int_to_tree (type,
+					wide_int::from (wval, prec,
+							UNSIGNED).bswap ());
+		  val.mask
+		    = widest_int::from (wide_int::from (val.mask, prec,
+							UNSIGNED).bswap (),
+					UNSIGNED);
+		  if (wi::sext (val.mask, prec) != -1)
+		    break;
+		}
+	      val.lattice_val = VARYING;
+	      val.value = NULL_TREE;
+	      val.mask = -1;
+	      break;
+
 	    default:;
 	    }
 	}
@@ -2170,23 +2200,26 @@ fold_builtin_alloca_with_align (gimple *stmt)
   if (size > threshold)
     return NULL_TREE;
 
+  /* We have to be able to move points-to info.  We used to assert
+     that we can but IPA PTA might end up with two UIDs here
+     as it might need to handle more than one instance being
+     live at the same time.  Instead of trying to detect this case
+     (using the first UID would be OK) just give up for now.  */
+  struct ptr_info_def *pi = SSA_NAME_PTR_INFO (lhs);
+  unsigned uid = 0;
+  if (pi != NULL
+      && !pi->pt.anything
+      && !pt_solution_singleton_or_null_p (&pi->pt, &uid))
+    return NULL_TREE;
+
   /* Declare array.  */
   elem_type = build_nonstandard_integer_type (BITS_PER_UNIT, 1);
   n_elem = size * 8 / BITS_PER_UNIT;
   array_type = build_array_type_nelts (elem_type, n_elem);
   var = create_tmp_var (array_type);
   SET_DECL_ALIGN (var, TREE_INT_CST_LOW (gimple_call_arg (stmt, 1)));
-  {
-    struct ptr_info_def *pi = SSA_NAME_PTR_INFO (lhs);
-    if (pi != NULL && !pi->pt.anything)
-      {
-	bool singleton_p;
-	unsigned uid;
-	singleton_p = pt_solution_singleton_or_null_p (&pi->pt, &uid);
-	gcc_assert (singleton_p);
-	SET_DECL_PT_UID (var, uid);
-      }
-  }
+  if (uid != 0)
+    SET_DECL_PT_UID (var, uid);
 
   /* Fold alloca to the address of the array.  */
   return fold_convert (TREE_TYPE (lhs), build_fold_addr_expr (var));
@@ -2560,7 +2593,7 @@ optimize_stack_restore (gimple_stmt_iterator i)
 
       callee = gimple_call_fndecl (stmt);
       if (!callee
-	  || DECL_BUILT_IN_CLASS (callee) != BUILT_IN_NORMAL
+	  || !fndecl_built_in_p (callee, BUILT_IN_NORMAL)
 	  /* All regular builtins are ok, just obviously not alloca.  */
 	  || ALLOCA_FUNCTION_CODE_P (DECL_FUNCTION_CODE (callee)))
 	return NULL_TREE;
@@ -2596,9 +2629,7 @@ optimize_stack_restore (gimple_stmt_iterator i)
       if (is_gimple_call (stack_save))
 	{
 	  callee = gimple_call_fndecl (stack_save);
-	  if (callee
-	      && DECL_BUILT_IN_CLASS (callee) == BUILT_IN_NORMAL
-	      && DECL_FUNCTION_CODE (callee) == BUILT_IN_STACK_SAVE)
+	  if (callee && fndecl_built_in_p (callee, BUILT_IN_STACK_SAVE))
 	    {
 	      gimple_stmt_iterator stack_save_gsi;
 	      tree rhs;
@@ -2931,12 +2962,10 @@ optimize_atomic_bit_test_and (gimple_stmt_iterator *gsip,
 				    bit, flag);
   gimple_call_set_lhs (g, new_lhs);
   gimple_set_location (g, gimple_location (call));
-  gimple_set_vuse (g, gimple_vuse (call));
-  gimple_set_vdef (g, gimple_vdef (call));
-  bool throws = stmt_can_throw_internal (call);
+  gimple_move_vops (g, call);
+  bool throws = stmt_can_throw_internal (cfun, call);
   gimple_call_set_nothrow (as_a <gcall *> (g),
 			   gimple_call_nothrow_p (as_a <gcall *> (call)));
-  SSA_NAME_DEF_STMT (gimple_vdef (call)) = g;
   gimple_stmt_iterator gsi = *gsip;
   gsi_insert_after (&gsi, g, GSI_NEW_STMT);
   edge e = NULL;
@@ -3195,7 +3224,7 @@ pass_fold_builtins::execute (function *fun)
 	    }
 
 	  callee = gimple_call_fndecl (stmt);
-	  if (!callee || DECL_BUILT_IN_CLASS (callee) != BUILT_IN_NORMAL)
+	  if (!callee || !fndecl_built_in_p (callee, BUILT_IN_NORMAL))
 	    {
 	      gsi_next (&i);
 	      continue;
@@ -3370,8 +3399,7 @@ pass_fold_builtins::execute (function *fun)
 	    }
 	  callee = gimple_call_fndecl (stmt);
 	  if (!callee
-              || DECL_BUILT_IN_CLASS (callee) != BUILT_IN_NORMAL
-	      || DECL_FUNCTION_CODE (callee) == fcode)
+	      || !fndecl_built_in_p (callee, fcode))
 	    gsi_next (&i);
 	}
     }
@@ -3454,9 +3482,10 @@ pass_post_ipa_warn::execute (function *fun)
 			continue;
 
 		      location_t loc = gimple_location (stmt);
+		      auto_diagnostic_group d;
 		      if (warning_at (loc, OPT_Wnonnull,
 				      "%Gargument %u null where non-null "
-				      "expected", as_a <gcall *>(stmt), i + 1))
+				      "expected", stmt, i + 1))
 			{
 			  tree fndecl = gimple_call_fndecl (stmt);
 			  if (fndecl && DECL_IS_BUILTIN (fndecl))

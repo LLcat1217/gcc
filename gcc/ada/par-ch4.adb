@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 B o d y                                  --
 --                                                                          --
---          Copyright (C) 1992-2018, Free Software Foundation, Inc.         --
+--          Copyright (C) 1992-2019, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -1884,7 +1884,7 @@ package body Ch4 is
    --  called in all contexts where a right parenthesis cannot legitimately
    --  follow an expression.
 
-   --  Error recovery: can not raise Error_Resync
+   --  Error recovery: cannot raise Error_Resync
 
    function P_Expression_No_Right_Paren return Node_Id is
       Expr : constant Node_Id := P_Expression;
@@ -2262,7 +2262,7 @@ package body Ch4 is
          --  capacity-exceeded error. The purpose of this trick is to avoid
          --  creating a deeply nested tree, which would cause deep recursion
          --  during semantics, causing stack overflow. This way, we can handle
-         --  enormous concatenations in the normal case of predefined "&".  We
+         --  enormous concatenations in the normal case of predefined "&". We
          --  first build up the normal tree, and then rewrite it if
          --  appropriate.
 

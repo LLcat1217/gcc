@@ -1,5 +1,5 @@
 /* Miscellaneous stuff that doesn't fit anywhere else.
-   Copyright (C) 2000-2018 Free Software Foundation, Inc.
+   Copyright (C) 2000-2019 Free Software Foundation, Inc.
    Contributed by Andy Vaught
 
 This file is part of GCC.
@@ -100,6 +100,9 @@ gfc_basic_typename (bt type)
     case BT_VOID:
       p = "VOID";
       break;
+    case BT_BOZ:
+      p = "BOZ";
+      break;
     case BT_UNKNOWN:
       p = "UNKNOWN";
       break;
@@ -168,6 +171,9 @@ gfc_typename (gfc_typespec *ts)
       break;
     case BT_PROCEDURE:
       strcpy (buffer, "PROCEDURE");
+      break;
+    case BT_BOZ:
+      strcpy (buffer, "BOZ");
       break;
     case BT_UNKNOWN:
       strcpy (buffer, "UNKNOWN");

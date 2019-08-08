@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 B o d y                                  --
 --                                                                          --
---          Copyright (C) 2008-2018, Free Software Foundation, Inc.         --
+--          Copyright (C) 2008-2019, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -229,8 +229,7 @@ procedure XOSCons is
             case Lang is
                when Lang_Ada =>
                   Put ("   subtype " & Info.Constant_Name.all
-                       & " is Interfaces.C."
-                       & Info.Text_Value.all & ";");
+                       & " is " & Info.Text_Value.all & ";");
                when Lang_C =>
                   Put ("#define " & Info.Constant_Name.all & " "
                        & Info.Text_Value.all);

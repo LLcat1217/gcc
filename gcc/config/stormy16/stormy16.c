@@ -1,5 +1,5 @@
 /* Xstormy16 target functions.
-   Copyright (C) 1997-2018 Free Software Foundation, Inc.
+   Copyright (C) 1997-2019 Free Software Foundation, Inc.
    Contributed by Red Hat, Inc.
 
    This file is part of GCC.
@@ -1512,8 +1512,10 @@ xstormy16_asm_output_mi_thunk (FILE *file,
 			       HOST_WIDE_INT vcall_offset ATTRIBUTE_UNUSED,
 			       tree function)
 {
+  const char *fnname = IDENTIFIER_POINTER (DECL_ASSEMBLER_NAME (thunk_fndecl));
   int regnum = FIRST_ARGUMENT_REGISTER;
 
+  assemble_start_function (thunk_fndecl, fnname);
   /* There might be a hidden first argument for a returned structure.  */
   if (aggregate_value_p (TREE_TYPE (TREE_TYPE (function)), function))
     regnum += 1;
@@ -1522,6 +1524,7 @@ xstormy16_asm_output_mi_thunk (FILE *file,
   fputs ("\tjmpf ", file);
   assemble_name (file, XSTR (XEXP (DECL_RTL (function), 0), 0));
   putc ('\n', file);
+  assemble_end_function (thunk_fndecl, fnname);
 }
 
 /* The purpose of this function is to override the default behavior of
@@ -2727,6 +2730,9 @@ xstormy16_push_rounding (poly_int64 bytes)
 
 #undef TARGET_CONSTANT_ALIGNMENT
 #define TARGET_CONSTANT_ALIGNMENT constant_alignment_word_strings
+
+#undef  TARGET_HAVE_SPECULATION_SAFE_VALUE
+#define TARGET_HAVE_SPECULATION_SAFE_VALUE speculation_safe_value_not_needed
 
 struct gcc_target targetm = TARGET_INITIALIZER;
 

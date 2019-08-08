@@ -3280,19 +3280,18 @@ to use the proper subtypes in object declarations.
 .. index:: MKS_Type type
 
 The simplest way to impose dimensionality checking on a computation is to make
-use of the package ``System.Dim.Mks``,
-which is part of the GNAT library. This
-package defines a floating-point type ``MKS_Type``,
-for which a sequence of
-dimension names are specified, together with their conventional abbreviations.
-The following should be read together with the full specification of the
-package, in file :file:`s-dimmks.ads`.
+use of one of the instantiations of the package ``System.Dim.Generic_Mks``, which
+are part of the GNAT library. This generic package defines a floating-point
+type ``MKS_Type``, for which a sequence of dimension names are specified,
+together with their conventional abbreviations.  The following should be read
+together with the full specification of the package, in file
+:file:`s-digemk.ads`.
 
-  .. index:: s-dimmks.ads file
+  .. index:: s-digemk.ads file
 
   .. code-block:: ada
 
-     type Mks_Type is new Long_Long_Float
+     type Mks_Type is new Float_Type
        with
         Dimension_System => (
           (Unit_Name => Meter,    Unit_Symbol => 'm',   Dim_Symbol => 'L'),
@@ -3336,10 +3335,16 @@ as well as useful multiples of these units:
      day : constant Time   := 60.0 * 24.0 * min;
     ...
 
-Using this package, you can then define a derived unit by
-providing the aspect that
-specifies its dimensions within the MKS system, as well as the string to
-be used for output of a value of that unit:
+There are three instantiations of ``System.Dim.Generic_Mks`` defined in the
+GNAT library:
+
+* ``System.Dim.Float_Mks`` based on ``Float`` defined in :file:`s-diflmk.ads`.
+* ``System.Dim.Long_Mks`` based on ``Long_Float`` defined in :file:`s-dilomk.ads`.
+* ``System.Dim.Mks`` based on ``Long_Long_Float`` defined in :file:`s-dimmks.ads`.
+
+Using one of these packages, you can then define a derived unit by providing
+the aspect that specifies its dimensions within the MKS system, as well as the
+string to be used for output of a value of that unit:
 
   .. code-block:: ada
 
@@ -3967,7 +3972,7 @@ execution of this erroneous program:
 
     ::
 
-       $ gnatmem [ switches ] user_program
+       $ gnatmem [ switches ] [ DEPTH ] user_program
 
   The program must have been linked with the instrumented version of the
   allocation and deallocation routines. This is done by linking with the
@@ -4057,15 +4062,16 @@ execution of this erroneous program:
     memory leaks. Omits statistical information.
 
 
-  .. index:: N switch (gnatmem)
+  .. index:: DEPTH switch (gnatmem)
 
-  :samp:`{N}`
-    ``N`` is an integer literal (usually between 1 and 10) which controls the
-    depth of the backtraces defining allocation root. The default value for
-    N is 1. The deeper the backtrace, the more precise the localization of
+  :samp:`{DEPTH}`
+    ``DEPTH`` is an integer literal (usually between 1 and 10) which controls
+    the depth of the backtraces defining allocation root. The default value for
+    DEPTH is 1. The deeper the backtrace, the more precise the localization of
     the root. Note that the total number of roots can depend on this
-    parameter. This parameter must be specified *before* the name of the
-    executable to be analyzed, to avoid ambiguity.
+    parameter, in other words there may be more roots when the requested
+    backtrace depth is higher. This parameter must be specified *before* the
+    name of the executable to be analyzed, to avoid ambiguity.
 
 
   .. index:: -b (gnatmem)

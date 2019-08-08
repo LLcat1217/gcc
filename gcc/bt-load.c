@@ -1,5 +1,5 @@
 /* Perform branch target register load optimizations.
-   Copyright (C) 2001-2018 Free Software Foundation, Inc.
+   Copyright (C) 2001-2019 Free Software Foundation, Inc.
 
 This file is part of GCC.
 
@@ -1169,7 +1169,6 @@ move_btr_def (basic_block new_def_bb, int btr, btr_def *def, bitmap live_range,
 
   if (def->other_btr_uses_before_def)
     {
-      insp = BB_END (b);
       for (insp = BB_END (b); ! INSN_P (insp); insp = PREV_INSN (insp))
 	gcc_assert (insp != BB_HEAD (b));
 

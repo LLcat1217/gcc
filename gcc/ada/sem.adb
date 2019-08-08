@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 B o d y                                  --
 --                                                                          --
---          Copyright (C) 1992-2018, Free Software Foundation, Inc.         --
+--          Copyright (C) 1992-2019, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -1579,7 +1579,7 @@ package body Sem is
            and then Nkind (Unit (Comp_Unit)) in N_Proper_Body
            and then (Nkind (Unit (Comp_Unit)) /= N_Subprogram_Body
                        or else not Acts_As_Spec (Comp_Unit))
-           and then not In_Extended_Main_Source_Unit (Comp_Unit)
+           and then not Ext_Main_Source_Unit
          then
             null;
 

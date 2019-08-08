@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 B o d y                                  --
 --                                                                          --
---          Copyright (C) 1999-2018, Free Software Foundation, Inc.         --
+--          Copyright (C) 1999-2019, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -443,7 +443,7 @@ package body GNAT.Command_Line is
 
       Parser.Current_Argument := Parser.Current_Argument + 1;
 
-      --  Could it be a file name with wild cards to expand?
+      --  Could it be a file name with wildcards to expand?
 
       if Do_Expansion then
          declare

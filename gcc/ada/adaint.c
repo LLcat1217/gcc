@@ -6,7 +6,7 @@
  *                                                                          *
  *                          C Implementation File                           *
  *                                                                          *
- *          Copyright (C) 1992-2018, Free Software Foundation, Inc.         *
+ *          Copyright (C) 1992-2019, Free Software Foundation, Inc.         *
  *                                                                          *
  * GNAT is free software;  you can  redistribute it  and/or modify it under *
  * terms of the  GNU General Public License as published  by the Free Soft- *
@@ -88,8 +88,26 @@
 #endif
 
 #ifdef IN_RTS
+
+#ifdef STANDALONE
+#include <errno.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <unistd.h>
+#include <stdlib.h>
+#include <string.h>
+
+/* for CPU_SET/CPU_ZERO */
+#define _GNU_SOURCE
+#define __USE_GNU
+
+#include "runtime.h"
+
+#else
 #include "tconfig.h"
 #include "tsystem.h"
+#endif
+
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <time.h>
@@ -662,6 +680,7 @@ void
 __gnat_get_executable_suffix_ptr (int *len, const char **value)
 {
   *value = HOST_EXECUTABLE_SUFFIX;
+
   if (!*value)
     *len = 0;
   else
@@ -2893,12 +2912,12 @@ __gnat_locate_regular_file (char *file_name, char *path_val)
 char *
 __gnat_locate_exec (char *exec_name, char *path_val)
 {
+  const unsigned int len = strlen (HOST_EXECUTABLE_SUFFIX);
   char *ptr;
-  if (!strstr (exec_name, HOST_EXECUTABLE_SUFFIX))
+
+  if (len > 0 && !strstr (exec_name, HOST_EXECUTABLE_SUFFIX))
     {
-      char *full_exec_name =
-        (char *) alloca
-	  (strlen (exec_name) + strlen (HOST_EXECUTABLE_SUFFIX) + 1);
+      char *full_exec_name = (char *) alloca (strlen (exec_name) + len + 1);
 
       strcpy (full_exec_name, exec_name);
       strcat (full_exec_name, HOST_EXECUTABLE_SUFFIX);
@@ -3238,9 +3257,13 @@ __gnat_lwp_self (void)
 #endif
 
 #if defined (__APPLE__)
-#include <mach/thread_info.h>
-#include <mach/mach_init.h>
-#include <mach/thread_act.h>
+# if __ENVIRONMENT_MAC_OS_X_VERSION_MIN_REQUIRED__ >= 1060
+#  include <mach/thread_info.h>
+#  include <mach/mach_init.h>
+#  include <mach/thread_act.h>
+# else
+#  include <pthread.h>
+# endif
 
 /* System-wide thread identifier.  Note it could be truncated on 32 bit
    hosts.
@@ -3248,6 +3271,7 @@ __gnat_lwp_self (void)
 void *
 __gnat_lwp_self (void)
 {
+#if __ENVIRONMENT_MAC_OS_X_VERSION_MIN_REQUIRED__ >= 1060
   thread_identifier_info_data_t data;
   mach_msg_type_number_t count = THREAD_IDENTIFIER_INFO_COUNT;
   kern_return_t kret;
@@ -3258,6 +3282,9 @@ __gnat_lwp_self (void)
     return (void *)(uintptr_t)data.thread_id;
   else
     return 0;
+#else
+  return (void *)pthread_mach_thread_np (pthread_self ());
+#endif
 }
 #endif
 

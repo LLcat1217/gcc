@@ -1,5 +1,5 @@
 /* Optimization information.
-   Copyright (C) 2018 Free Software Foundation, Inc.
+   Copyright (C) 2018-2019 Free Software Foundation, Inc.
    Contributed by David Malcolm <dmalcolm@redhat.com>.
 
 This file is part of GCC.
@@ -89,14 +89,43 @@ optinfo::add_item (optinfo_item *item)
   m_items.safe_push (item);
 }
 
-/* Emit the optinfo to all of the "non-immediate" destinations
-   (emission to "immediate" destinations is done by emit_item).  */
+/* Get MSG_* flags corresponding to KIND.  */
+
+static dump_flags_t
+optinfo_kind_to_dump_flag (enum optinfo_kind kind)
+{
+  switch (kind)
+    {
+    default:
+      gcc_unreachable ();
+    case OPTINFO_KIND_SUCCESS:
+      return MSG_OPTIMIZED_LOCATIONS;
+    case OPTINFO_KIND_FAILURE:
+      return MSG_MISSED_OPTIMIZATION;
+    case OPTINFO_KIND_NOTE:
+    case OPTINFO_KIND_SCOPE:
+      return MSG_NOTE;
+    }
+}
+
+/* Re-emit this optinfo, both to the "non-immediate" destinations,
+   *and* to the "immediate" destinations.  */
 
 void
-optinfo::emit ()
+optinfo::emit_for_opt_problem () const
 {
-  /* -fsave-optimization-record.  */
-  optimization_records_maybe_record_optinfo (this);
+  dump_flags_t dump_kind = optinfo_kind_to_dump_flag (get_kind ());
+  dump_kind |= MSG_PRIORITY_REEMITTED;
+
+  /* Re-emit to "immediate" destinations, without creating a new optinfo.  */
+  dump_context::get ().dump_loc_immediate (dump_kind, get_user_location ());
+  unsigned i;
+  optinfo_item *item;
+  FOR_EACH_VEC_ELT (m_items, i, item)
+    dump_context::get ().emit_item (item, dump_kind);
+
+  /* Re-emit to "non-immediate" destinations.  */
+  dump_context::get ().emit_optinfo (this);
 }
 
 /* Update the optinfo's kind based on DUMP_KIND.  */
@@ -104,6 +133,9 @@ optinfo::emit ()
 void
 optinfo::handle_dump_file_kind (dump_flags_t dump_kind)
 {
+  /* Any optinfo for a "scope" should have been emitted separately.  */
+  gcc_assert (m_kind != OPTINFO_KIND_SCOPE);
+
   if (dump_kind & MSG_OPTIMIZED_LOCATIONS)
     m_kind = OPTINFO_KIND_SUCCESS;
   else if (dump_kind & MSG_MISSED_OPTIMIZATION)
@@ -112,21 +144,11 @@ optinfo::handle_dump_file_kind (dump_flags_t dump_kind)
     m_kind = OPTINFO_KIND_NOTE;
 }
 
-/* Should optinfo instances be created?
-   All creation of optinfos should be guarded by this predicate.
-   Return true if any optinfo destinations are active.  */
-
-bool optinfo_enabled_p ()
-{
-  return (dump_context::get ().forcibly_enable_optinfo_p ()
-	  || optimization_records_enabled_p ());
-}
-
 /* Return true if any of the active optinfo destinations make use
    of inlining information.
    (if true, then the information is preserved).  */
 
 bool optinfo_wants_inlining_info_p ()
 {
-  return optimization_records_enabled_p ();
+  return dump_context::get ().optimization_records_enabled_p ();
 }

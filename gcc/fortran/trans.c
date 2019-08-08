@@ -1,5 +1,5 @@
 /* Code translation -- generate GCC trees from gfc_code.
-   Copyright (C) 2002-2018 Free Software Foundation, Inc.
+   Copyright (C) 2002-2019 Free Software Foundation, Inc.
    Contributed by Paul Brook
 
 This file is part of GCC.
@@ -60,26 +60,6 @@ gfc_advance_chain (tree t, int n)
     }
   return t;
 }
-
-
-/* Strip off a legitimate source ending from the input
-   string NAME of length LEN.  */
-
-static inline void
-remove_suffix (char *name, int len)
-{
-  int i;
-
-  for (i = 2; i < 8 && len > i; i++)
-    {
-      if (name[len - i] == '.')
-	{
-	  name[len - i] = '\0';
-	  break;
-	}
-    }
-}
-
 
 /* Creates a variable declaration with a given TYPE.  */
 
@@ -310,6 +290,16 @@ get_array_span (tree type, tree decl)
 {
   tree span;
 
+  /* Component references are guaranteed to have a reliable value for
+     'span'. Likewise indirect references since they emerge from the
+     conversion of a CFI descriptor or the hidden dummy descriptor.  */
+  if (TREE_CODE (decl) == COMPONENT_REF
+      && GFC_DESCRIPTOR_TYPE_P (TREE_TYPE (decl)))
+    return gfc_conv_descriptor_span_get (decl);
+  else if (TREE_CODE (decl) == INDIRECT_REF
+	   && GFC_DESCRIPTOR_TYPE_P (TREE_TYPE (decl)))
+    return gfc_conv_descriptor_span_get (decl);
+
   /* Return the span for deferred character length array references.  */
   if (type && TREE_CODE (type) == ARRAY_TYPE
       && TYPE_MAX_VALUE (TYPE_DOMAIN (type)) != NULL_TREE
@@ -326,6 +316,15 @@ get_array_span (tree type, tree decl)
 			  fold_convert (gfc_array_index_type,
 					TYPE_SIZE_UNIT (TREE_TYPE (type))),
 			  span);
+    }
+  else if (type && TREE_CODE (type) == ARRAY_TYPE
+	   && TYPE_MAX_VALUE (TYPE_DOMAIN (type)) != NULL_TREE
+	   && integer_zerop (TYPE_MAX_VALUE (TYPE_DOMAIN (type))))
+    {
+      if (GFC_DESCRIPTOR_TYPE_P (TREE_TYPE (decl)))
+	span = gfc_conv_descriptor_span_get (decl);
+      else
+	span = NULL_TREE;
     }
   /* Likewise for class array or pointer array references.  */
   else if (TREE_CODE (decl) == FIELD_DECL
@@ -419,7 +418,8 @@ gfc_build_array_ref (tree base, tree offset, tree decl, tree vptr)
       tmp = gfc_build_addr_expr (pvoid_type_node, base);
       tmp = fold_build_pointer_plus_loc (input_location, tmp, offset);
       tmp = fold_convert (build_pointer_type (type), tmp);
-      if (!TYPE_STRING_FLAG (type))
+      if ((TREE_CODE (type) != INTEGER_TYPE && TREE_CODE (type) != ARRAY_TYPE)
+	  || !TYPE_STRING_FLAG (type))
 	tmp = build_fold_indirect_ref_loc (input_location, tmp);
       return tmp;
     }
@@ -1014,9 +1014,6 @@ gfc_build_final_call (gfc_typespec ts, gfc_expr *final_wrapper, gfc_expr *var,
 	  gfc_add_block_to_block (&block, &se.pre);
 	  gcc_assert (se.post.head == NULL_TREE);
 	  array = se.expr;
-	  if (TREE_CODE (array) == ADDR_EXPR
-	      && POINTER_TYPE_P (TREE_TYPE (TREE_OPERAND (array, 0))))
-	    tmp = TREE_OPERAND (array, 0);
 
 	  if (!gfc_is_coarray (array_expr))
 	    {

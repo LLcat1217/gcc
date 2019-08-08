@@ -1,5 +1,5 @@
 /* { dg-do compile } */
-/* { dg-options "-O2 -ftree-vectorize -fopenmp-simd -msve-vector-bits=512" } */
+/* { dg-options "-O2 -ftree-vectorize -fopenmp-simd -msve-vector-bits=512 -fno-tree-loop-distribute-patterns" } */
 
 #define N 64
 #include "single_1.c"
@@ -12,7 +12,7 @@
 /* { dg-final { scan-assembler-times {\tmov\tz[0-9]+\.s, #6\n} 1 } } */
 /* { dg-final { scan-assembler-times {\tmov\tz[0-9]+\.d, #7\n} 1 } } */
 /* { dg-final { scan-assembler-times {\tmov\tz[0-9]+\.d, #8\n} 1 } } */
-/* { dg-final { scan-assembler-times {\tmov\tz[0-9]+\.h, #15360\n} 1 } } */
+/* { dg-final { scan-assembler-times {\tfmov\tz[0-9]+\.h, #1\.0e\+0\n} 1 } } */
 /* { dg-final { scan-assembler-times {\tfmov\tz[0-9]+\.s, #2\.0e\+0\n} 1 } } */
 /* { dg-final { scan-assembler-times {\tfmov\tz[0-9]+\.d, #3\.0e\+0\n} 1 } } */
 

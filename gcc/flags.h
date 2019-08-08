@@ -1,5 +1,5 @@
 /* Compilation switch flag definitions for GCC.
-   Copyright (C) 1987-2018 Free Software Foundation, Inc.
+   Copyright (C) 1987-2019 Free Software Foundation, Inc.
 
 This file is part of GCC.
 
@@ -42,8 +42,9 @@ extern bool final_insns_dump_p;
 
 /* Other basic status info about current function.  */
 
-struct target_flag_state
+class target_flag_state
 {
+public:
   /* Each falign-foo can generate up to two levels of alignment:
      -falign-foo=N:M[:N2:M2] */
   align_flags x_align_loops;
@@ -55,9 +56,9 @@ struct target_flag_state
   enum excess_precision x_flag_excess_precision;
 };
 
-extern struct target_flag_state default_target_flag_state;
+extern class target_flag_state default_target_flag_state;
 #if SWITCHABLE_TARGET
-extern struct target_flag_state *this_target_flag_state;
+extern class target_flag_state *this_target_flag_state;
 #else
 #define this_target_flag_state (&default_target_flag_state)
 #endif

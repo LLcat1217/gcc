@@ -1,5 +1,5 @@
 /* Control flow optimization code for GNU compiler.
-   Copyright (C) 1987-2018 Free Software Foundation, Inc.
+   Copyright (C) 1987-2019 Free Software Foundation, Inc.
 
 This file is part of GCC.
 
@@ -53,6 +53,7 @@ along with GCC; see the file COPYING3.  If not see
 #include "dce.h"
 #include "dbgcnt.h"
 #include "rtl-iter.h"
+#include "regs.h"
 
 #define FORWARDER_BLOCK_P(BB) ((BB)->flags & BB_FORWARDER_BLOCK)
 
@@ -308,6 +309,11 @@ thread_jump (edge e, basic_block b)
       || !rtx_equal_p (XEXP (cond1, 1), XEXP (cond2, 1)))
     return NULL;
 
+  /* Punt if BB_END (e->src) is doloop-like conditional jump that modifies
+     the registers used in cond1.  */
+  if (modified_in_p (cond1, BB_END (e->src)))
+    return NULL;
+
   /* Short circuit cases where block B contains some side effects, as we can't
      safely bypass it.  */
   for (insn = NEXT_INSN (BB_HEAD (b)); insn != NEXT_INSN (BB_END (b));
@@ -338,6 +344,13 @@ thread_jump (edge e, basic_block b)
        insn != NEXT_INSN (BB_END (b)) && !failed;
        insn = NEXT_INSN (insn))
     {
+      /* cond2 must not mention any register that is not equal to the
+	 former block.  Check this before processing that instruction,
+	 as BB_END (b) could contain also clobbers.  */
+      if (insn == BB_END (b)
+	  && mentions_nonequal_regs (cond2, nonequal))
+	goto failed_exit;
+
       if (INSN_P (insn))
 	{
 	  rtx pat = PATTERN (insn);
@@ -361,11 +374,6 @@ thread_jump (edge e, basic_block b)
       b->flags |= BB_NONTHREADABLE_BLOCK;
       goto failed_exit;
     }
-
-  /* cond2 must not mention any register that is not equal to the
-     former block.  */
-  if (mentions_nonequal_regs (cond2, nonequal))
-    goto failed_exit;
 
   EXECUTE_IF_SET_IN_REG_SET (nonequal, 0, i, rsi)
     goto failed_exit;
@@ -1217,6 +1225,14 @@ old_insns_match_p (int mode ATTRIBUTE_UNUSED, rtx_insn *i1, rtx_insn *i2)
 		}
 	    }
 	}
+
+      HARD_REG_SET i1_used, i2_used;
+
+      get_call_reg_set_usage (i1, &i1_used, call_used_reg_set);
+      get_call_reg_set_usage (i2, &i2_used, call_used_reg_set);
+
+      if (!hard_reg_set_equal_p (i1_used, i2_used))
+        return dir_none;
     }
 
   /* If both i1 and i2 are frame related, verify all the CFA notes
@@ -1592,10 +1608,13 @@ outgoing_edges_match (int mode, basic_block bb1, basic_block bb2)
   if (crtl->shrink_wrapped
       && single_succ_p (bb1)
       && single_succ (bb1) == EXIT_BLOCK_PTR_FOR_FN (cfun)
-      && !JUMP_P (BB_END (bb1))
+      && (!JUMP_P (BB_END (bb1))
+	  /* Punt if the only successor is a fake edge to exit, the jump
+	     must be some weird one.  */
+	  || (single_succ_edge (bb1)->flags & EDGE_FAKE) != 0)
       && !(CALL_P (BB_END (bb1)) && SIBLING_CALL_P (BB_END (bb1))))
     return false;
-  
+
   /* If BB1 has only one successor, we may be looking at either an
      unconditional jump, or a fake edge to exit.  */
   if (single_succ_p (bb1)
@@ -2702,23 +2721,23 @@ try_optimize_cfg (int mode)
 
 		      if (current_ir_type () == IR_RTL_CFGLAYOUT)
 			{
-			  if (BB_FOOTER (b)
-			      && BARRIER_P (BB_FOOTER (b)))
+			  rtx_insn *insn;
+			  for (insn = BB_FOOTER (b);
+			       insn; insn = NEXT_INSN (insn))
+			    if (BARRIER_P (insn))
+			      break;
+			  if (insn)
 			    FOR_EACH_EDGE (e, ei, b->preds)
-			      if ((e->flags & EDGE_FALLTHRU)
-				  && BB_FOOTER (e->src) == NULL)
+			      if ((e->flags & EDGE_FALLTHRU))
 				{
-				  if (BB_FOOTER (b))
+				  if (BB_FOOTER (b)
+				      && BB_FOOTER (e->src) == NULL)
 				    {
 				      BB_FOOTER (e->src) = BB_FOOTER (b);
 				      BB_FOOTER (b) = NULL;
 				    }
 				  else
-				    {
-				      start_sequence ();
-				      BB_FOOTER (e->src) = emit_barrier ();
-				      end_sequence ();
-				    }
+				    emit_barrier_after_bb (e->src);
 				}
 			}
 		      else
@@ -3174,7 +3193,10 @@ cleanup_cfg (int mode)
 	      && !delete_trivially_dead_insns (get_insns (), max_reg_num ()))
 	    break;
 	  if ((mode & CLEANUP_CROSSJUMP) && crossjumps_occurred)
-	    run_fast_dce ();
+	    {
+	      run_fast_dce ();
+	      mode &= ~CLEANUP_FORCE_FAST_DCE;
+	    }
 	}
       else
 	break;
@@ -3182,6 +3204,9 @@ cleanup_cfg (int mode)
 
   if (mode & CLEANUP_CROSSJUMP)
     remove_fake_exit_edges ();
+
+  if (mode & CLEANUP_FORCE_FAST_DCE)
+    run_fast_dce ();
 
   /* Don't call delete_dead_jumptables in cfglayout mode, because
      that function assumes that jump tables are in the insns stream.
@@ -3257,6 +3282,48 @@ make_pass_jump (gcc::context *ctxt)
   return new pass_jump (ctxt);
 }
 
+namespace {
+
+const pass_data pass_data_postreload_jump =
+{
+  RTL_PASS, /* type */
+  "postreload_jump", /* name */
+  OPTGROUP_NONE, /* optinfo_flags */
+  TV_JUMP, /* tv_id */
+  0, /* properties_required */
+  0, /* properties_provided */
+  0, /* properties_destroyed */
+  0, /* todo_flags_start */
+  0, /* todo_flags_finish */
+};
+
+class pass_postreload_jump : public rtl_opt_pass
+{
+public:
+  pass_postreload_jump (gcc::context *ctxt)
+    : rtl_opt_pass (pass_data_postreload_jump, ctxt)
+  {}
+
+  /* opt_pass methods: */
+  virtual unsigned int execute (function *);
+
+}; // class pass_postreload_jump
+
+unsigned int
+pass_postreload_jump::execute (function *)
+{
+  cleanup_cfg (flag_thread_jumps ? CLEANUP_THREADING : 0);
+  return 0;
+}
+
+} // anon namespace
+
+rtl_opt_pass *
+make_pass_postreload_jump (gcc::context *ctxt)
+{
+  return new pass_postreload_jump (ctxt);
+}
+
 namespace {
 
 const pass_data pass_data_jump2 =

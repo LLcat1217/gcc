@@ -1,5 +1,5 @@
 /* Optimization information.
-   Copyright (C) 2018 Free Software Foundation, Inc.
+   Copyright (C) 2018-2019 Free Software Foundation, Inc.
    Contributed by David Malcolm <dmalcolm@redhat.com>.
 
 This file is part of GCC.
@@ -65,14 +65,8 @@ along with GCC; see the file COPYING3.  If not see
 
 
 /* Forward decls.  */
-struct opt_pass;
+class opt_pass;
 class optinfo_item;
-
-/* Should optinfo instances be created?
-   All creation of optinfos should be guarded by this predicate.
-   Return true if any optinfo destinations are active.  */
-
-extern bool optinfo_enabled_p ();
 
 /* Return true if any of the active optinfo destinations make use
    of inlining information.
@@ -108,6 +102,9 @@ class optinfo
   {}
   ~optinfo ();
 
+  const dump_location_t &
+  get_dump_location () const { return m_loc; }
+
   const dump_user_location_t &
   get_user_location () const { return m_loc.get_user_location (); }
 
@@ -124,9 +121,9 @@ class optinfo
 
   void add_item (optinfo_item *item);
 
- private:
-  void emit ();
+  void emit_for_opt_problem () const;
 
+ private:
   /* Pre-canned ways of manipulating the optinfo, for use by friend class
      dump_context.  */
   void handle_dump_file_kind (dump_flags_t);

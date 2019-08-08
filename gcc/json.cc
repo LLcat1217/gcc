@@ -1,5 +1,5 @@
 /* JSON trees
-   Copyright (C) 2017-2018 Free Software Foundation, Inc.
+   Copyright (C) 2017-2019 Free Software Foundation, Inc.
    Contributed by David Malcolm <dmalcolm@redhat.com>.
 
 This file is part of GCC.
@@ -97,6 +97,22 @@ object::set (const char *key, value *v)
     /* If the key wasn't already present, take a copy of the key,
        and store the value.  */
     m_map.put (xstrdup (key), v);
+}
+
+/* Get the json::value * for KEY.
+
+   The object retains ownership of the value.  */
+
+value *
+object::get (const char *key) const
+{
+  gcc_assert (key);
+
+  value **ptr = const_cast <map_t &> (m_map).get (key);
+  if (ptr)
+    return *ptr;
+  else
+    return NULL;
 }
 
 /* class json::array, a subclass of json::value, representing
@@ -240,6 +256,18 @@ assert_print_eq (const json::value &jv, const char *expected_json)
   ASSERT_STREQ (expected_json, pp_formatted_text (&pp));
 }
 
+/* Verify that object::get works as expected.  */
+
+static void
+test_object_get ()
+{
+  object obj;
+  value *val = new json::string ("value");
+  obj.set ("foo", val);
+  ASSERT_EQ (obj.get ("foo"), val);
+  ASSERT_EQ (obj.get ("not-present"), NULL);
+}
+
 /* Verify that JSON objects are written correctly.  We can't test more than
    one key/value pair, as we don't impose a guaranteed ordering.  */
 
@@ -288,7 +316,7 @@ test_writing_strings ()
   assert_print_eq (contains_quotes, "\"before \\\"quoted\\\" after\"");
 }
 
-/* Verify that JSON strings are written correctly.  */
+/* Verify that JSON literals are written correctly.  */
 
 static void
 test_writing_literals ()
@@ -296,6 +324,9 @@ test_writing_literals ()
   assert_print_eq (literal (JSON_TRUE), "true");
   assert_print_eq (literal (JSON_FALSE), "false");
   assert_print_eq (literal (JSON_NULL), "null");
+
+  assert_print_eq (literal (true), "true");
+  assert_print_eq (literal (false), "false");
 }
 
 /* Run all of the selftests within this file.  */
@@ -303,6 +334,7 @@ test_writing_literals ()
 void
 json_cc_tests ()
 {
+  test_object_get ();
   test_writing_objects ();
   test_writing_arrays ();
   test_writing_numbers ();

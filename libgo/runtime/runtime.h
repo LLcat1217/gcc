@@ -78,9 +78,7 @@ typedef	struct	_panic			Panic;
 
 typedef struct	__go_ptr_type		PtrType;
 typedef struct	__go_func_type		FuncType;
-typedef struct	__go_interface_type	InterfaceType;
 typedef struct	__go_map_type		MapType;
-typedef struct	__go_channel_type	ChanType;
 
 typedef struct  tracebackg	Traceback;
 
@@ -94,7 +92,7 @@ struct String
 
 struct FuncVal
 {
-	void	(*fn)(void);
+	uintptr_t fn;
 	// variable-size, fn-specific data here
 };
 
@@ -116,11 +114,6 @@ struct FuncVal
 extern M*	runtime_m(void);
 extern G*	runtime_g(void)
   __asm__(GOSYM_PREFIX "runtime.getg");
-
-extern M*	runtime_m0(void)
-  __asm__(GOSYM_PREFIX "runtime.runtime_m0");
-extern G*	runtime_g0(void)
-  __asm__(GOSYM_PREFIX "runtime.runtime_g0");
 
 enum
 {
@@ -198,15 +191,6 @@ void	runtime_hashinit(void);
  */
 extern	uintptr* runtime_getZerobase(void)
   __asm__(GOSYM_PREFIX "runtime.getZerobase");
-extern G* runtime_getallg(intgo)
-  __asm__(GOSYM_PREFIX "runtime.getallg");
-extern uintptr runtime_getallglen(void)
-  __asm__(GOSYM_PREFIX "runtime.getallglen");
-extern	M*	runtime_getallm(void)
-  __asm__(GOSYM_PREFIX "runtime.getallm");
-extern	Sched*  runtime_sched;
-extern	uint32	runtime_panicking(void)
-  __asm__ (GOSYM_PREFIX "runtime.getPanicking");
 
 extern	bool	runtime_isstarted;
 extern	bool	runtime_isarchive;
@@ -240,6 +224,8 @@ int32	runtime_snprintf(byte*, int32, const char*, ...);
 #define runtime_memmove(a, b, s) __builtin_memmove((a), (b), (s))
 String	runtime_gostringnocopy(const byte*)
   __asm__ (GOSYM_PREFIX "runtime.gostringnocopy");
+void	runtime_ginit(void)
+  __asm__ (GOSYM_PREFIX "runtime.ginit");
 void	runtime_schedinit(void)
   __asm__ (GOSYM_PREFIX "runtime.schedinit");
 void	runtime_initsig(bool)
@@ -268,7 +254,7 @@ void*	runtime_sysAlloc(uintptr, uint64*)
 void	runtime_sysFree(void*, uintptr, uint64*)
   __asm__ (GOSYM_PREFIX "runtime.sysFree");
 void	runtime_mprofinit(void);
-#define runtime_getcallersp(p) __builtin_frame_address(0)
+#define runtime_getcallersp() __builtin_dwarf_cfa()
 void	runtime_mcall(FuncVal*)
   __asm__ (GOSYM_PREFIX "runtime.mcall");
 int32	runtime_timediv(int64, int32, int32*)
@@ -276,22 +262,8 @@ int32	runtime_timediv(int64, int32, int32*)
 int32	runtime_round2(int32 x); // round x up to a power of 2.
 
 // atomic operations
-#define runtime_cas(pval, old, new) __sync_bool_compare_and_swap (pval, old, new)
-#define runtime_cas64(pval, old, new) __sync_bool_compare_and_swap (pval, old, new)
-#define runtime_casp(pval, old, new) __sync_bool_compare_and_swap (pval, old, new)
-// Don't confuse with XADD x86 instruction,
-// this one is actually 'addx', that is, add-and-fetch.
-#define runtime_xadd(p, v) __sync_add_and_fetch (p, v)
-#define runtime_xadd64(p, v) __sync_add_and_fetch (p, v)
-#define runtime_xchg(p, v) __atomic_exchange_n (p, v, __ATOMIC_SEQ_CST)
-#define runtime_xchg64(p, v) __atomic_exchange_n (p, v, __ATOMIC_SEQ_CST)
-#define runtime_xchgp(p, v) __atomic_exchange_n (p, v, __ATOMIC_SEQ_CST)
+#define runtime_xadd(p, v) __atomic_add_fetch (p, v, __ATOMIC_SEQ_CST)
 #define runtime_atomicload(p) __atomic_load_n (p, __ATOMIC_SEQ_CST)
-#define runtime_atomicstore(p, v) __atomic_store_n (p, v, __ATOMIC_SEQ_CST)
-#define runtime_atomicstore64(p, v) __atomic_store_n (p, v, __ATOMIC_SEQ_CST)
-#define runtime_atomicload64(p) __atomic_load_n (p, __ATOMIC_SEQ_CST)
-#define runtime_atomicloadp(p) __atomic_load_n (p, __ATOMIC_SEQ_CST)
-#define runtime_atomicstorep(p, v) __atomic_store_n (p, v, __ATOMIC_SEQ_CST)
 
 void runtime_setg(G*)
   __asm__ (GOSYM_PREFIX "runtime.setg");
@@ -305,13 +277,11 @@ void	runtime_schedtrace(bool)
 void	runtime_goparkunlock(Lock*, String, byte, intgo)
   __asm__ (GOSYM_PREFIX "runtime.goparkunlock");
 void	runtime_tsleep(int64, const char*);
-void	runtime_entersyscall(int32)
+void	runtime_entersyscall()
   __asm__ (GOSYM_PREFIX "runtime.entersyscall");
-void	runtime_entersyscallblock(int32)
+void	runtime_entersyscallblock()
   __asm__ (GOSYM_PREFIX "runtime.entersyscallblock");
-void	runtime_exitsyscall(int32)
-  __asm__ (GOSYM_PREFIX "runtime.exitsyscall");
-G*	__go_go(void (*pfn)(void*), void*);
+G*	__go_go(uintptr, void*);
 int32	runtime_callers(int32, Location*, int32, bool keep_callers);
 int64	runtime_nanotime(void)	// monotonic time
   __asm__(GOSYM_PREFIX "runtime.nanotime");
@@ -385,7 +355,7 @@ bool	runtime_notetsleepg(Note*, int64)  // false - timeout
 #define runtime_munmap munmap
 #define runtime_madvise madvise
 #define runtime_memclr(buf, size) __builtin_memset((buf), 0, (size))
-#define runtime_getcallerpc(p) __builtin_return_address(0)
+#define runtime_getcallerpc() __builtin_return_address(0)
 
 #ifdef __rtems__
 void __wrap_rtems_task_variable_add(void **);
@@ -396,7 +366,7 @@ void __wrap_rtems_task_variable_add(void **);
  */
 void reflect_call(const struct __go_func_type *, FuncVal *, _Bool, _Bool,
 		  void **, void **)
-  __asm__ (GOSYM_PREFIX "reflect.call");
+  __asm__ (GOSYM_PREFIX "runtime.reflectcall");
 void runtime_panic(Eface)
   __asm__ (GOSYM_PREFIX "runtime.gopanic");
 void runtime_panic(Eface)
@@ -405,9 +375,7 @@ void runtime_panic(Eface)
 /*
  * runtime c-called (but written in Go)
  */
-void	runtime_newTypeAssertionError(const String*, const String*, const String*, const String*, Eface*)
-     __asm__ (GOSYM_PREFIX "runtime.NewTypeAssertionError");
-void	runtime_newErrorCString(const char*, Eface*)
+void	runtime_newErrorCString(uintptr, Eface*)
      __asm__ (GOSYM_PREFIX "runtime.NewErrorCString");
 
 /*
@@ -465,7 +433,6 @@ int32 getproccount(void);
 
 #define PREFETCH(p) __builtin_prefetch(p)
 
-bool	runtime_gcwaiting(void);
 void	runtime_badsignal(int);
 Defer*	runtime_newdefer(void);
 void	runtime_freedefer(Defer*);
@@ -481,10 +448,10 @@ extern void *getitab(const struct __go_type_descriptor *,
   __asm__ (GOSYM_PREFIX "runtime.getitab");
 
 extern void runtime_cpuinit(void);
+extern void setRandomNumber(uint32)
+  __asm__ (GOSYM_PREFIX "runtime.setRandomNumber");
 extern void setIsCgo(void)
   __asm__ (GOSYM_PREFIX "runtime.setIsCgo");
-extern void setCpuidECX(uint32)
-  __asm__ (GOSYM_PREFIX "runtime.setCpuidECX");
 extern void setSupportAES(bool)
   __asm__ (GOSYM_PREFIX "runtime.setSupportAES");
 extern void typedmemmove(const Type *, void *, const void *)
@@ -495,3 +462,51 @@ extern Sched* runtime_getsched(void)
   __asm__ (GOSYM_PREFIX "runtime.getsched");
 extern void setpagesize(uintptr_t)
   __asm__(GOSYM_PREFIX "runtime.setpagesize");
+
+struct funcfileline_return
+{
+  String retfn;
+  String retfile;
+  intgo retline;
+  intgo retframes;
+};
+
+struct funcfileline_return
+runtime_funcfileline (uintptr targetpc, int32 index)
+  __asm__ (GOSYM_PREFIX "runtime.funcfileline");
+
+/*
+ * helpers for stack scan.
+ */
+bool scanstackwithmap(void*)
+  __asm__(GOSYM_PREFIX "runtime.scanstackwithmap");
+bool doscanstack(G*, void*)
+  __asm__("runtime.doscanstack");
+
+bool runtime_usestackmaps;
+
+bool probestackmaps(void)
+  __asm__("runtime.probestackmaps");
+
+// This is set to non-zero when calling backtrace_full.  This is used
+// to avoid getting hanging on a recursive lock in dl_iterate_phdr on
+// older versions of glibc when a SIGPROF signal arrives while
+// collecting a backtrace.
+extern uint32 __go_runtime_in_callers;
+
+// Cheaper context switch functions.  Currently only defined on
+// Linux/AMD64.
+#if defined(__x86_64__) && defined(__linux__) && !defined(__CET__)
+typedef struct {
+	uint64 regs[8];
+} __go_context_t;
+int __go_getcontext(__go_context_t*);
+int __go_setcontext(__go_context_t*);
+void __go_makecontext(__go_context_t*, void (*)(), void*, size_t);
+#else
+#define __go_context_t	ucontext_t
+#define __go_getcontext(c)	getcontext(c)
+#define __go_setcontext(c)	setcontext(c)
+#define __go_makecontext(c, fn, sp, size) \
+	((c)->uc_stack.ss_sp = sp, (c)->uc_stack.ss_size = size, makecontext(c, fn, 0))
+#endif

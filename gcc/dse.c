@@ -1,5 +1,5 @@
 /* RTL dead store elimination.
-   Copyright (C) 2005-2018 Free Software Foundation, Inc.
+   Copyright (C) 2005-2019 Free Software Foundation, Inc.
 
    Contributed by Richard Sandiford <rsandifor@codesourcery.com>
    and Kenneth Zadeck <zadeck@naturalbridge.com>
@@ -220,8 +220,9 @@ static bitmap scratch = NULL;
 struct insn_info_type;
 
 /* This structure holds information about a candidate store.  */
-struct store_info
+class store_info
 {
+public:
 
   /* False means this is a clobber.  */
   bool is_set;
@@ -277,7 +278,7 @@ struct store_info
     } positions_needed;
 
   /* The next store info for this insn.  */
-  struct store_info *next;
+  class store_info *next;
 
   /* The right hand side of the store.  This is used if there is a
      subsequent reload of the mems address somewhere later in the
@@ -309,8 +310,9 @@ static object_allocator<store_info> rtx_store_info_pool ("rtx_store_info_pool");
 
 /* This structure holds information about a load.  These are only
    built for rtx bases.  */
-struct read_info_type
+class read_info_type
 {
+public:
   /* The id of the mem group of the base address.  */
   int group_id;
 
@@ -324,9 +326,9 @@ struct read_info_type
   rtx mem;
 
   /* The next read_info for this insn.  */
-  struct read_info_type *next;
+  class read_info_type *next;
 };
-typedef struct read_info_type *read_info_t;
+typedef class read_info_type *read_info_t;
 
 static object_allocator<read_info_type> read_info_type_pool ("read_info_pool");
 
@@ -1507,7 +1509,7 @@ record_store (rtx body, bb_info_t bb_info)
   while (ptr)
     {
       insn_info_t next = ptr->next_local_store;
-      struct store_info *s_info = ptr->store_rec;
+      class store_info *s_info = ptr->store_rec;
       bool del = true;
 
       /* Skip the clobbers. We delete the active insn if this insn
@@ -1841,7 +1843,7 @@ get_stored_val (store_info *store_info, machine_mode read_mode,
   else
     gap = read_offset - store_info->offset;
 
-  if (maybe_ne (gap, 0))
+  if (gap.is_constant () && maybe_ne (gap, 0))
     {
       poly_int64 shift = gap * BITS_PER_UNIT;
       poly_int64 access_size = GET_MODE_SIZE (read_mode) + gap;
@@ -2072,8 +2074,29 @@ check_mem_read_rtx (rtx *loc, bb_info_t bb_info)
   insn_info = bb_info->last_insn;
 
   if ((MEM_ALIAS_SET (mem) == ALIAS_SET_MEMORY_BARRIER)
-      || (MEM_VOLATILE_P (mem)))
+      || MEM_VOLATILE_P (mem))
     {
+      if (crtl->stack_protect_guard
+	  && (MEM_EXPR (mem) == crtl->stack_protect_guard
+	      || (crtl->stack_protect_guard_decl
+		  && MEM_EXPR (mem) == crtl->stack_protect_guard_decl))
+	  && MEM_VOLATILE_P (mem))
+	{
+	  /* This is either the stack protector canary on the stack,
+	     which ought to be written by a MEM_VOLATILE_P store and
+	     thus shouldn't be deleted and is read at the very end of
+	     function, but shouldn't conflict with any other store.
+	     Or it is __stack_chk_guard variable or TLS or whatever else
+	     MEM holding the canary value, which really shouldn't be
+	     ever modified in -fstack-protector* protected functions,
+	     otherwise the prologue store wouldn't match the epilogue
+	     check.  */
+	  if (dump_file && (dump_flags & TDF_DETAILS))
+	    fprintf (dump_file, " stack protector canary read ignored.\n");
+	  insn_info->cannot_delete = true;
+	  return;
+	}
+
       if (dump_file && (dump_flags & TDF_DETAILS))
 	fprintf (dump_file, " adding wild read, volatile or barrier.\n");
       add_wild_read (bb_info);
@@ -2419,8 +2442,7 @@ scan_insn (bb_info_t bb_info, rtx_insn *insn)
 	  && GET_CODE (sym) == SYMBOL_REF
 	  && SYMBOL_REF_DECL (sym)
 	  && TREE_CODE (SYMBOL_REF_DECL (sym)) == FUNCTION_DECL
-	  && DECL_BUILT_IN_CLASS (SYMBOL_REF_DECL (sym)) == BUILT_IN_NORMAL
-	  && DECL_FUNCTION_CODE (SYMBOL_REF_DECL (sym)) == BUILT_IN_MEMSET)
+	  && fndecl_built_in_p (SYMBOL_REF_DECL (sym), BUILT_IN_MEMSET))
 	memset_call = SYMBOL_REF_DECL (sym);
 
       if (const_call || memset_call)
@@ -2588,7 +2610,7 @@ remove_useless_values (cselib_val *base)
       bool del = false;
 
       /* If ANY of the store_infos match the cselib group that is
-	 being deleted, then the insn can not be deleted.  */
+	 being deleted, then the insn cannot be deleted.  */
       while (store_info)
 	{
 	  if ((store_info->group_id == -1)
@@ -3599,7 +3621,10 @@ rest_of_handle_dse (void)
   if ((locally_deleted || globally_deleted)
       && cfun->can_throw_non_call_exceptions
       && purge_all_dead_edges ())
-    cleanup_cfg (0);
+    {
+      free_dominance_info (CDI_DOMINATORS);
+      cleanup_cfg (0);
+    }
 
   return 0;
 }

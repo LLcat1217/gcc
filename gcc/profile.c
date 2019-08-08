@@ -1,5 +1,5 @@
 /* Calculate branch probabilities, and basic block execution counts.
-   Copyright (C) 1990-2018 Free Software Foundation, Inc.
+   Copyright (C) 1990-2019 Free Software Foundation, Inc.
    Contributed by James E. Wilson, UC Berkeley/Cygnus Support;
    based on some ideas from Dain Samples of UC Berkeley.
    Further mangling by Bob Manson, Cygnus Support.
@@ -84,11 +84,7 @@ struct bb_profile_info {
 
 /* Counter summary from the last set of coverage counts read.  */
 
-const gcov_summary *profile_info;
-
-/* Counter working set information computed from the current counter
-   summary. Not initialized unless profile_info summary is non-NULL.  */
-static gcov_working_set_t gcov_working_sets[NUM_GCOV_WORKING_SETS];
+gcov_summary *profile_info;
 
 /* Collect statistics on the performance of this pass for the entire source
    file.  */
@@ -102,14 +98,6 @@ static int total_num_passes;
 static int total_num_times_called;
 static int total_hist_br_prob[20];
 static int total_num_branches;
-
-/* Helper function to update gcov_working_sets.  */
-
-void add_working_set (gcov_working_set_t *set) {
-  int i = 0;
-  for (; i < NUM_GCOV_WORKING_SETS; i++)
-    gcov_working_sets[i] = set[i];
-}
 
 /* Forward declarations.  */
 static void find_spanning_tree (struct edge_list *);
@@ -179,12 +167,11 @@ instrument_values (histogram_values values)
 	  gimple_gen_pow2_profiler (hist, t, 0);
 	  break;
 
-	case HIST_TYPE_SINGLE_VALUE:
-	  gimple_gen_one_value_profiler (hist, t, 0);
+	case HIST_TYPE_TOPN_VALUES:
+	  gimple_gen_topn_values_profiler (hist, t, 0);
 	  break;
 
  	case HIST_TYPE_INDIR_CALL:
- 	case HIST_TYPE_INDIR_CALL_TOPN:
  	  gimple_gen_ic_profiler (hist, t, 0);
   	  break;
 
@@ -206,60 +193,6 @@ instrument_values (histogram_values values)
     }
 }
 
-
-/* Fill the working set information into the profile_info structure.  */
-
-void
-get_working_sets (void)
-{
-  unsigned ws_ix, pctinc, pct;
-  gcov_working_set_t *ws_info;
-
-  if (!profile_info)
-    return;
-
-  compute_working_sets (profile_info, gcov_working_sets);
-
-  if (dump_file)
-    {
-      fprintf (dump_file, "Counter working sets:\n");
-      /* Multiply the percentage by 100 to avoid float.  */
-      pctinc = 100 * 100 / NUM_GCOV_WORKING_SETS;
-      for (ws_ix = 0, pct = pctinc; ws_ix < NUM_GCOV_WORKING_SETS;
-           ws_ix++, pct += pctinc)
-        {
-          if (ws_ix == NUM_GCOV_WORKING_SETS - 1)
-            pct = 9990;
-          ws_info = &gcov_working_sets[ws_ix];
-          /* Print out the percentage using int arithmatic to avoid float.  */
-          fprintf (dump_file, "\t\t%u.%02u%%: num counts=%u, min counter="
-                   "%" PRId64 "\n",
-                   pct / 100, pct - (pct / 100 * 100),
-                   ws_info->num_counters,
-                   (int64_t)ws_info->min_counter);
-        }
-    }
-}
-
-/* Given a the desired percentage of the full profile (sum_all from the
-   summary), multiplied by 10 to avoid float in PCT_TIMES_10, returns
-   the corresponding working set information. If an exact match for
-   the percentage isn't found, the closest value is used.  */
-
-gcov_working_set_t *
-find_working_set (unsigned pct_times_10)
-{
-  unsigned i;
-  if (!profile_info)
-    return NULL;
-  gcc_assert (pct_times_10 <= 1000);
-  if (pct_times_10 >= 999)
-    return &gcov_working_sets[NUM_GCOV_WORKING_SETS - 1];
-  i = pct_times_10 * NUM_GCOV_WORKING_SETS / 1000;
-  if (!i)
-    return &gcov_working_sets[0];
-  return &gcov_working_sets[i - 1];
-}
 
 /* Computes hybrid profile for all matching entries in da_file.  
    
@@ -283,20 +216,13 @@ get_exec_counts (unsigned cfg_checksum, unsigned lineno_checksum)
 	  num_edges++;
     }
 
-  counts = get_coverage_counts (GCOV_COUNTER_ARCS, num_edges, cfg_checksum,
-				lineno_checksum, &profile_info);
+  counts = get_coverage_counts (GCOV_COUNTER_ARCS, cfg_checksum,
+				lineno_checksum, num_edges);
   if (!counts)
     return NULL;
 
-  get_working_sets ();
-
-  if (dump_file && profile_info)
-    fprintf (dump_file, "Merged %u profiles with maximal count %u.\n",
-	     profile_info->runs, (unsigned) profile_info->sum_max);
-
   return counts;
 }
-
 
 static bool
 is_edge_inconsistent (vec<edge, va_gc> *edges)
@@ -439,29 +365,7 @@ read_profile_edge_counts (gcov_type *exec_counts)
 	  {
 	    num_edges++;
 	    if (exec_counts)
-	      {
-		edge_gcov_count (e) = exec_counts[exec_counts_pos++];
-		if (edge_gcov_count (e) > profile_info->sum_max)
-		  {
-		    if (flag_profile_correction)
-		      {
-			static bool informed = 0;
-			if (dump_enabled_p () && !informed)
-			  {
-			    dump_location_t loc
-			      = dump_location_t::from_location_t
-			        (input_location);
-			    dump_printf_loc (MSG_NOTE, loc,
-					     "corrupted profile info: edge count"
-					     " exceeds maximal count\n");
-			  }
-			informed = 1;
-		      }
-		    else
-		      error ("corrupted profile info: edge from %i to %i exceeds maximal count",
-			     bb->index, e->dest->index);
-		  }
-	      }
+	      edge_gcov_count (e) = exec_counts[exec_counts_pos++];
 	    else
 	      edge_gcov_count (e) = 0;
 
@@ -510,12 +414,6 @@ compute_branch_probabilities (unsigned cfg_checksum, unsigned lineno_checksum)
 
   bb_gcov_counts.safe_grow_cleared (last_basic_block_for_fn (cfun));
   edge_gcov_counts = new hash_map<edge,gcov_type>;
-
-  if (profile_info->sum_all < profile_info->sum_max)
-    {
-      error ("corrupted profile info: sum_all is smaller than sum_max");
-      exec_counts = NULL;
-    }
 
   /* Attach extra info block to each bb.  */
   alloc_aux_for_blocks (sizeof (struct bb_profile_info));
@@ -678,7 +576,7 @@ compute_branch_probabilities (unsigned cfg_checksum, unsigned lineno_checksum)
            {
              informed = 1;
              dump_printf_loc (MSG_NOTE,
-			      dump_location_t::from_location_t (input_location),
+			      dump_user_location_t::from_location_t (input_location),
                               "correcting inconsistent profile data\n");
            }
          correct_negative_edge_counts ();
@@ -799,6 +697,9 @@ compute_branch_probabilities (unsigned cfg_checksum, unsigned lineno_checksum)
 	}
     }
 
+  if (exec_counts)
+    profile_status_for_fn (cfun) = PROFILE_READ;
+
   /* If we have real data, use them!  */
   if (bb_gcov_count (ENTRY_BLOCK_PTR_FOR_FN (cfun))
       || !flag_guess_branch_prob)
@@ -806,7 +707,7 @@ compute_branch_probabilities (unsigned cfg_checksum, unsigned lineno_checksum)
       bb->count = profile_count::from_gcov_type (bb_gcov_count (bb));
   /* If function was not trained, preserve local estimates including statically
      determined zero counts.  */
-  else
+  else if (profile_status_for_fn (cfun) == PROFILE_READ)
     FOR_ALL_BB_FN (bb, cfun)
       if (!(bb->count == profile_count::zero ()))
         bb->count = bb->count.global0 ();
@@ -819,6 +720,11 @@ compute_branch_probabilities (unsigned cfg_checksum, unsigned lineno_checksum)
 
   if (dump_file)
     {
+      fprintf (dump_file, " Profile feedback for function");
+      fprintf (dump_file, ((profile_status_for_fn (cfun) == PROFILE_READ)
+			   ? " is available \n"
+			   : " is not available \n"));
+
       fprintf (dump_file, "%d branches\n", num_branches);
       if (num_branches)
 	for (i = 0; i < 10; i++)
@@ -837,6 +743,42 @@ compute_branch_probabilities (unsigned cfg_checksum, unsigned lineno_checksum)
   free_aux_for_blocks ();
 }
 
+/* Sort the histogram value and count for TOPN and INDIR_CALL type.  */
+
+static void
+sort_hist_values (histogram_value hist)
+{
+  /* counters[2] equal to -1 means that all counters are invalidated.  */
+  if (hist->hvalue.counters[2] == -1)
+    return;
+
+  gcc_assert (hist->type == HIST_TYPE_TOPN_VALUES
+	      || hist->type == HIST_TYPE_INDIR_CALL);
+
+  gcc_assert (hist->n_counters == GCOV_TOPN_VALUES_COUNTERS);
+
+  /* Hist value is organized as:
+     [total_executions, value1, counter1, ..., value4, counter4]
+     Use decrease bubble sort to rearrange it.  The sort starts from <value1,
+     counter1> and compares counter first.  If counter is same, compares the
+     value, exchange it if small to keep stable.  */
+  for (unsigned i = 0; i < GCOV_TOPN_VALUES - 1; i++)
+    {
+      bool swapped = false;
+      for (unsigned j = 0; j < GCOV_TOPN_VALUES - 1 - i; j++)
+	{
+	  gcov_type *p = &hist->hvalue.counters[2 * j + 1];
+	  if (p[1] < p[3] || (p[1] == p[3] && p[0] < p[2]))
+	    {
+	      std::swap (p[0], p[2]);
+	      std::swap (p[1], p[3]);
+	      swapped = true;
+	    }
+	}
+      if (!swapped)
+	break;
+    }
+}
 /* Load value histograms values whose description is stored in VALUES array
    from .gcda file.  
 
@@ -871,10 +813,10 @@ compute_value_histograms (histogram_values values, unsigned cfg_checksum,
 	  continue;
 	}
 
-      histogram_counts[t] =
-	get_coverage_counts (COUNTER_FOR_HIST_TYPE (t),
-			     n_histogram_counters[t], cfg_checksum,
-			     lineno_checksum, NULL);
+      histogram_counts[t] = get_coverage_counts (COUNTER_FOR_HIST_TYPE (t),
+						 cfg_checksum,
+						 lineno_checksum,
+						 n_histogram_counters[t]);
       if (histogram_counts[t])
 	any = 1;
       act_count[t] = histogram_counts[t];
@@ -901,6 +843,10 @@ compute_value_histograms (histogram_values values, unsigned cfg_checksum,
           hist->hvalue.counters[j] = aact_count[j];
         else
           hist->hvalue.counters[j] = 0;
+
+      if (hist->type == HIST_TYPE_TOPN_VALUES
+	  || hist->type == HIST_TYPE_INDIR_CALL)
+	sort_hist_values (hist);
 
       /* Time profiler counter is not related to any statement,
          so that we have to read the counter and set the value to
@@ -1056,6 +1002,25 @@ compare_freqs (const void *p1, const void *p2)
   return e2->dest->index - e1->dest->index;
 }
 
+/* Only read execution count for thunks.  */
+
+void
+read_thunk_profile (struct cgraph_node *node)
+{
+  tree old = current_function_decl;
+  current_function_decl = node->decl;
+  gcov_type *counts = get_coverage_counts (GCOV_COUNTER_ARCS, 0, 0, 1);
+  if (counts)
+    {
+      node->callees->count = node->count
+	 = profile_count::from_gcov_type (counts[0]);
+      free (counts);
+    }
+  current_function_decl = old;
+  return;
+}
+
+
 /* Instrument and/or analyze program behavior based on program the CFG.
 
    This function creates a representation of the control flow graph (of
@@ -1076,7 +1041,7 @@ compare_freqs (const void *p1, const void *p2)
    Main entry point of this file.  */
 
 void
-branch_prob (void)
+branch_prob (bool thunk)
 {
   basic_block bb;
   unsigned i;
@@ -1093,118 +1058,121 @@ branch_prob (void)
 
   hash_set <location_triplet_hash> streamed_locations;
 
-  /* We can't handle cyclic regions constructed using abnormal edges.
-     To avoid these we replace every source of abnormal edge by a fake
-     edge from entry node and every destination by fake edge to exit.
-     This keeps graph acyclic and our calculation exact for all normal
-     edges except for exit and entrance ones.
-
-     We also add fake exit edges for each call and asm statement in the
-     basic, since it may not return.  */
-
-  FOR_EACH_BB_FN (bb, cfun)
+  if (!thunk)
     {
-      int need_exit_edge = 0, need_entry_edge = 0;
-      int have_exit_edge = 0, have_entry_edge = 0;
-      edge e;
-      edge_iterator ei;
+      /* We can't handle cyclic regions constructed using abnormal edges.
+	 To avoid these we replace every source of abnormal edge by a fake
+	 edge from entry node and every destination by fake edge to exit.
+	 This keeps graph acyclic and our calculation exact for all normal
+	 edges except for exit and entrance ones.
 
-      /* Functions returning multiple times are not handled by extra edges.
-         Instead we simply allow negative counts on edges from exit to the
-         block past call and corresponding probabilities.  We can't go
-         with the extra edges because that would result in flowgraph that
-	 needs to have fake edges outside the spanning tree.  */
+	 We also add fake exit edges for each call and asm statement in the
+	 basic, since it may not return.  */
 
-      FOR_EACH_EDGE (e, ei, bb->succs)
+      FOR_EACH_BB_FN (bb, cfun)
 	{
-	  gimple_stmt_iterator gsi;
-	  gimple *last = NULL;
+	  int need_exit_edge = 0, need_entry_edge = 0;
+	  int have_exit_edge = 0, have_entry_edge = 0;
+	  edge e;
+	  edge_iterator ei;
 
-	  /* It may happen that there are compiler generated statements
-	     without a locus at all.  Go through the basic block from the
-	     last to the first statement looking for a locus.  */
-	  for (gsi = gsi_last_nondebug_bb (bb);
-	       !gsi_end_p (gsi);
-	       gsi_prev_nondebug (&gsi))
-	    {
-	      last = gsi_stmt (gsi);
-	      if (!RESERVED_LOCATION_P (gimple_location (last)))
-		break;
-	    }
+	  /* Functions returning multiple times are not handled by extra edges.
+	     Instead we simply allow negative counts on edges from exit to the
+	     block past call and corresponding probabilities.  We can't go
+	     with the extra edges because that would result in flowgraph that
+	     needs to have fake edges outside the spanning tree.  */
 
-	  /* Edge with goto locus might get wrong coverage info unless
-	     it is the only edge out of BB.
-	     Don't do that when the locuses match, so
-	     if (blah) goto something;
-	     is not computed twice.  */
-	  if (last
-	      && gimple_has_location (last)
-	      && !RESERVED_LOCATION_P (e->goto_locus)
-	      && !single_succ_p (bb)
-	      && (LOCATION_FILE (e->goto_locus)
-	          != LOCATION_FILE (gimple_location (last))
-		  || (LOCATION_LINE (e->goto_locus)
-		      != LOCATION_LINE (gimple_location (last)))))
-	    {
-	      basic_block new_bb = split_edge (e);
-	      edge ne = single_succ_edge (new_bb);
-	      ne->goto_locus = e->goto_locus;
-	    }
-	  if ((e->flags & (EDGE_ABNORMAL | EDGE_ABNORMAL_CALL))
-	       && e->dest != EXIT_BLOCK_PTR_FOR_FN (cfun))
-	    need_exit_edge = 1;
-	  if (e->dest == EXIT_BLOCK_PTR_FOR_FN (cfun))
-	    have_exit_edge = 1;
-	}
-      FOR_EACH_EDGE (e, ei, bb->preds)
-	{
-	  if ((e->flags & (EDGE_ABNORMAL | EDGE_ABNORMAL_CALL))
-	       && e->src != ENTRY_BLOCK_PTR_FOR_FN (cfun))
-	    need_entry_edge = 1;
-	  if (e->src == ENTRY_BLOCK_PTR_FOR_FN (cfun))
-	    have_entry_edge = 1;
-	}
-
-      if (need_exit_edge && !have_exit_edge)
-	{
-	  if (dump_file)
-	    fprintf (dump_file, "Adding fake exit edge to bb %i\n",
-		     bb->index);
-	  make_edge (bb, EXIT_BLOCK_PTR_FOR_FN (cfun), EDGE_FAKE);
-	}
-      if (need_entry_edge && !have_entry_edge)
-	{
-	  if (dump_file)
-	    fprintf (dump_file, "Adding fake entry edge to bb %i\n",
-		     bb->index);
-	  make_edge (ENTRY_BLOCK_PTR_FOR_FN (cfun), bb, EDGE_FAKE);
-	  /* Avoid bbs that have both fake entry edge and also some
-	     exit edge.  One of those edges wouldn't be added to the
-	     spanning tree, but we can't instrument any of them.  */
-	  if (have_exit_edge || need_exit_edge)
+	  FOR_EACH_EDGE (e, ei, bb->succs)
 	    {
 	      gimple_stmt_iterator gsi;
-	      gimple *first;
+	      gimple *last = NULL;
 
-	      gsi = gsi_start_nondebug_after_labels_bb (bb);
-	      gcc_checking_assert (!gsi_end_p (gsi));
-	      first = gsi_stmt (gsi);
-	      /* Don't split the bbs containing __builtin_setjmp_receiver
-		 or ABNORMAL_DISPATCHER calls.  These are very
-		 special and don't expect anything to be inserted before
-		 them.  */
-	      if (is_gimple_call (first)
-		  && (gimple_call_builtin_p (first, BUILT_IN_SETJMP_RECEIVER)
-		      || (gimple_call_flags (first) & ECF_RETURNS_TWICE)
-		      || (gimple_call_internal_p (first)
-			  && (gimple_call_internal_fn (first)
-			      == IFN_ABNORMAL_DISPATCHER))))
-		continue;
+	      /* It may happen that there are compiler generated statements
+		 without a locus at all.  Go through the basic block from the
+		 last to the first statement looking for a locus.  */
+	      for (gsi = gsi_last_nondebug_bb (bb);
+		   !gsi_end_p (gsi);
+		   gsi_prev_nondebug (&gsi))
+		{
+		  last = gsi_stmt (gsi);
+		  if (!RESERVED_LOCATION_P (gimple_location (last)))
+		    break;
+		}
 
+	      /* Edge with goto locus might get wrong coverage info unless
+		 it is the only edge out of BB.
+		 Don't do that when the locuses match, so
+		 if (blah) goto something;
+		 is not computed twice.  */
+	      if (last
+		  && gimple_has_location (last)
+		  && !RESERVED_LOCATION_P (e->goto_locus)
+		  && !single_succ_p (bb)
+		  && (LOCATION_FILE (e->goto_locus)
+		      != LOCATION_FILE (gimple_location (last))
+		      || (LOCATION_LINE (e->goto_locus)
+			  != LOCATION_LINE (gimple_location (last)))))
+		{
+		  basic_block new_bb = split_edge (e);
+		  edge ne = single_succ_edge (new_bb);
+		  ne->goto_locus = e->goto_locus;
+		}
+	      if ((e->flags & (EDGE_ABNORMAL | EDGE_ABNORMAL_CALL))
+		   && e->dest != EXIT_BLOCK_PTR_FOR_FN (cfun))
+		need_exit_edge = 1;
+	      if (e->dest == EXIT_BLOCK_PTR_FOR_FN (cfun))
+		have_exit_edge = 1;
+	    }
+	  FOR_EACH_EDGE (e, ei, bb->preds)
+	    {
+	      if ((e->flags & (EDGE_ABNORMAL | EDGE_ABNORMAL_CALL))
+		   && e->src != ENTRY_BLOCK_PTR_FOR_FN (cfun))
+		need_entry_edge = 1;
+	      if (e->src == ENTRY_BLOCK_PTR_FOR_FN (cfun))
+		have_entry_edge = 1;
+	    }
+
+	  if (need_exit_edge && !have_exit_edge)
+	    {
 	      if (dump_file)
-		fprintf (dump_file, "Splitting bb %i after labels\n",
+		fprintf (dump_file, "Adding fake exit edge to bb %i\n",
 			 bb->index);
-	      split_block_after_labels (bb);
+	      make_edge (bb, EXIT_BLOCK_PTR_FOR_FN (cfun), EDGE_FAKE);
+	    }
+	  if (need_entry_edge && !have_entry_edge)
+	    {
+	      if (dump_file)
+		fprintf (dump_file, "Adding fake entry edge to bb %i\n",
+			 bb->index);
+	      make_edge (ENTRY_BLOCK_PTR_FOR_FN (cfun), bb, EDGE_FAKE);
+	      /* Avoid bbs that have both fake entry edge and also some
+		 exit edge.  One of those edges wouldn't be added to the
+		 spanning tree, but we can't instrument any of them.  */
+	      if (have_exit_edge || need_exit_edge)
+		{
+		  gimple_stmt_iterator gsi;
+		  gimple *first;
+
+		  gsi = gsi_start_nondebug_after_labels_bb (bb);
+		  gcc_checking_assert (!gsi_end_p (gsi));
+		  first = gsi_stmt (gsi);
+		  /* Don't split the bbs containing __builtin_setjmp_receiver
+		     or ABNORMAL_DISPATCHER calls.  These are very
+		     special and don't expect anything to be inserted before
+		     them.  */
+		  if (is_gimple_call (first)
+		      && (gimple_call_builtin_p (first, BUILT_IN_SETJMP_RECEIVER)
+			  || (gimple_call_flags (first) & ECF_RETURNS_TWICE)
+			  || (gimple_call_internal_p (first)
+			      && (gimple_call_internal_fn (first)
+				  == IFN_ABNORMAL_DISPATCHER))))
+		    continue;
+
+		  if (dump_file)
+		    fprintf (dump_file, "Splitting bb %i after labels\n",
+			     bb->index);
+		  split_block_after_labels (bb);
+		}
 	    }
 	}
     }
@@ -1236,7 +1204,18 @@ branch_prob (void)
      on the spanning tree.  We insert as many abnormal and critical edges
      as possible to minimize number of edge splits necessary.  */
 
-  find_spanning_tree (el);
+  if (!thunk)
+    find_spanning_tree (el);
+  else
+    {
+      edge e;
+      edge_iterator ei;
+      /* Keep only edge from entry block to be instrumented.  */
+      FOR_EACH_BB_FN (bb, cfun)
+	FOR_EACH_EDGE (e, ei, bb->succs)
+	  EDGE_INFO (e)->ignore = true;
+    }
+
 
   /* Fake edges that are not on the tree will not be instrumented, so
      mark them ignored.  */
@@ -1276,8 +1255,17 @@ branch_prob (void)
      the checksum in only once place, since it depends on the shape
      of the control flow which can change during 
      various transformations.  */
-  cfg_checksum = coverage_compute_cfg_checksum (cfun);
-  lineno_checksum = coverage_compute_lineno_checksum ();
+  if (thunk)
+    {
+      /* At stream in time we do not have CFG, so we cannot do checksums.  */
+      cfg_checksum = 0;
+      lineno_checksum = 0;
+    }
+  else
+    {
+      cfg_checksum = coverage_compute_cfg_checksum (cfun);
+      lineno_checksum = coverage_compute_lineno_checksum ();
+    }
 
   /* Write the data from which gcov can reconstruct the basic block
      graph and function line numbers (the gcno file).  */
@@ -1419,12 +1407,12 @@ branch_prob (void)
   values.release ();
   free_edge_list (el);
   coverage_end_function (lineno_checksum, cfg_checksum);
-  if (flag_branch_probabilities && profile_info)
+  if (flag_branch_probabilities
+      && (profile_status_for_fn (cfun) == PROFILE_READ))
     {
-      struct loop *loop;
+      class loop *loop;
       if (dump_file && (dump_flags & TDF_DETAILS))
 	report_predictor_hitrates ();
-      profile_status_for_fn (cfun) = PROFILE_READ;
 
       /* At this moment we have precise loop iteration count estimates.
 	 Record them to loop structure before the profile gets out of date. */

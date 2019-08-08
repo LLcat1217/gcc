@@ -1,5 +1,5 @@
 /* Sets (bit vectors) of hard registers, and operations on them.
-   Copyright (C) 1987-2018 Free Software Foundation, Inc.
+   Copyright (C) 1987-2019 Free Software Foundation, Inc.
 
 This file is part of GCC
 
@@ -613,8 +613,8 @@ hard_reg_set_iter_next (hard_reg_set_iterator *iter, unsigned *regno)
 
 extern char global_regs[FIRST_PSEUDO_REGISTER];
 
-struct simplifiable_subreg;
-struct subreg_shape;
+class simplifiable_subreg;
+class subreg_shape;
 
 struct simplifiable_subregs_hasher : nofree_ptr_hash <simplifiable_subreg>
 {
@@ -674,7 +674,7 @@ struct target_hard_regs {
      with the local stack frame are safe, but scant others.  */
   HARD_REG_SET x_regs_invalidated_by_call;
 
-  /* Call used hard registers which can not be saved because there is no
+  /* Call used hard registers which cannot be saved because there is no
      insn for this.  */
   HARD_REG_SET x_no_caller_save_reg_set;
 

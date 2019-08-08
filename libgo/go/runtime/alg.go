@@ -5,6 +5,7 @@
 package runtime
 
 import (
+	"internal/cpu"
 	"runtime/internal/sys"
 	"unsafe"
 )
@@ -43,7 +44,6 @@ import (
 //go:linkname ifacevaleq runtime.ifacevaleq
 //go:linkname ifaceefaceeq runtime.ifaceefaceeq
 //go:linkname efacevaleq runtime.efacevaleq
-//go:linkname eqstring runtime.eqstring
 //go:linkname cmpstring runtime.cmpstring
 //
 // Temporary to be called from C code.
@@ -137,7 +137,7 @@ func interhash(p unsafe.Pointer, h uintptr) uintptr {
 	t := *(**_type)(tab)
 	fn := t.hashfn
 	if fn == nil {
-		panic(errorString("hash of unhashable type " + *t.string))
+		panic(errorString("hash of unhashable type " + t.string()))
 	}
 	if isDirectIface(t) {
 		return c1 * fn(unsafe.Pointer(&a.data), h^c0)
@@ -154,7 +154,7 @@ func nilinterhash(p unsafe.Pointer, h uintptr) uintptr {
 	}
 	fn := t.hashfn
 	if fn == nil {
-		panic(errorString("hash of unhashable type " + *t.string))
+		panic(errorString("hash of unhashable type " + t.string()))
 	}
 	if isDirectIface(t) {
 		return c1 * fn(unsafe.Pointer(&a.data), h^c0)
@@ -204,7 +204,7 @@ func nilinterequal(p, q unsafe.Pointer) bool {
 }
 func efaceeq(x, y eface) bool {
 	t := x._type
-	if !eqtype(t, y._type) {
+	if t != y._type {
 		return false
 	}
 	if t == nil {
@@ -212,7 +212,7 @@ func efaceeq(x, y eface) bool {
 	}
 	eq := t.equalfn
 	if eq == nil {
-		panic(errorString("comparing uncomparable type " + *t.string))
+		panic(errorString("comparing uncomparable type " + t.string()))
 	}
 	if isDirectIface(t) {
 		return x.data == y.data
@@ -228,12 +228,12 @@ func ifaceeq(x, y iface) bool {
 		return false
 	}
 	t := *(**_type)(xtab)
-	if !eqtype(t, *(**_type)(y.tab)) {
+	if t != *(**_type)(y.tab) {
 		return false
 	}
 	eq := t.equalfn
 	if eq == nil {
-		panic(errorString("comparing uncomparable type " + *t.string))
+		panic(errorString("comparing uncomparable type " + t.string()))
 	}
 	if isDirectIface(t) {
 		return x.data == y.data
@@ -246,12 +246,12 @@ func ifacevaleq(x iface, t *_type, p unsafe.Pointer) bool {
 		return false
 	}
 	xt := *(**_type)(x.tab)
-	if !eqtype(xt, t) {
+	if xt != t {
 		return false
 	}
 	eq := t.equalfn
 	if eq == nil {
-		panic(errorString("comparing uncomparable type " + *t.string))
+		panic(errorString("comparing uncomparable type " + t.string()))
 	}
 	if isDirectIface(t) {
 		return x.data == p
@@ -267,12 +267,12 @@ func ifaceefaceeq(x iface, y eface) bool {
 		return false
 	}
 	xt := *(**_type)(x.tab)
-	if !eqtype(xt, y._type) {
+	if xt != y._type {
 		return false
 	}
 	eq := xt.equalfn
 	if eq == nil {
-		panic(errorString("comparing uncomparable type " + *xt.string))
+		panic(errorString("comparing uncomparable type " + xt.string()))
 	}
 	if isDirectIface(xt) {
 		return x.data == y.data
@@ -284,12 +284,12 @@ func efacevaleq(x eface, t *_type, p unsafe.Pointer) bool {
 	if x._type == nil {
 		return false
 	}
-	if !eqtype(x._type, t) {
+	if x._type != t {
 		return false
 	}
 	eq := t.equalfn
 	if eq == nil {
-		panic(errorString("comparing uncomparable type " + *t.string))
+		panic(errorString("comparing uncomparable type " + t.string()))
 	}
 	if isDirectIface(t) {
 		return x.data == p
@@ -388,23 +388,25 @@ func ifaceHash(i interface {
 
 const hashRandomBytes = sys.PtrSize / 4 * 64
 
-// used in asm_{386,amd64}.s to seed the hash function
+// used in asm_{386,amd64,arm64}.s to seed the hash function
 var aeskeysched [hashRandomBytes]byte
 
 // used in hash{32,64}.go to seed the hash function
 var hashkey [4]uintptr
 
 func alginit() {
-	// Install aes hash algorithm if we have the instructions we need
+	// Install AES hash algorithms if the instructions needed are present.
 	if (GOARCH == "386" || GOARCH == "amd64") &&
 		GOOS != "nacl" &&
 		support_aes &&
-		cpuid_ecx&(1<<25) != 0 && // aes (aesenc)
-		cpuid_ecx&(1<<9) != 0 && // sse3 (pshufb)
-		cpuid_ecx&(1<<19) != 0 { // sse4.1 (pinsr{d,q})
-		useAeshash = true
-		// Initialize with random data so hash collisions will be hard to engineer.
-		getRandomData(aeskeysched[:])
+		cpu.X86.HasAES && // AESENC
+		cpu.X86.HasSSSE3 && // PSHUFB
+		cpu.X86.HasSSE41 { // PINSR{D,Q}
+		initAlgAES()
+		return
+	}
+	if GOARCH == "arm64" && cpu.ARM64.HasAES {
+		initAlgAES()
 		return
 	}
 	getRandomData((*[len(hashkey) * sys.PtrSize]byte)(unsafe.Pointer(&hashkey))[:])
@@ -412,4 +414,10 @@ func alginit() {
 	hashkey[1] |= 1
 	hashkey[2] |= 1
 	hashkey[3] |= 1
+}
+
+func initAlgAES() {
+	useAeshash = true
+	// Initialize with random data so hash collisions will be hard to engineer.
+	getRandomData(aeskeysched[:])
 }

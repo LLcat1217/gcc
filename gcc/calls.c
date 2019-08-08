@@ -1,5 +1,5 @@
 /* Convert function calls to rtl insns, for GNU C compiler.
-   Copyright (C) 1989-2018 Free Software Foundation, Inc.
+   Copyright (C) 1989-2019 Free Software Foundation, Inc.
 
 This file is part of GCC.
 
@@ -82,15 +82,6 @@ struct arg_data
   /* If REG is a PARALLEL, this is a copy of VALUE pulled into the correct
      form for emit_group_move.  */
   rtx parallel_value;
-  /* If value is passed in neither reg nor stack, this field holds a number
-     of a special slot to be used.  */
-  rtx special_slot;
-  /* For pointer bounds hold an index of parm bounds are bound to.  -1 if
-     there is no such pointer.  */
-  int pointer_arg;
-  /* If pointer_arg refers a structure, then pointer_offset holds an offset
-     of a pointer in this structure.  */
-  int pointer_offset;
   /* If REG was promoted from the actual mode of the argument expression,
      indicates whether the promotion is sign- or zero-extended.  */
   int unsignedp;
@@ -715,7 +706,7 @@ gimple_alloca_call_p (const gimple *stmt)
     return false;
 
   fndecl = gimple_call_fndecl (stmt);
-  if (fndecl && DECL_BUILT_IN_CLASS (fndecl) == BUILT_IN_NORMAL)
+  if (fndecl && fndecl_built_in_p (fndecl, BUILT_IN_NORMAL))
     switch (DECL_FUNCTION_CODE (fndecl))
       {
       CASE_BUILT_IN_ALLOCA:
@@ -1222,8 +1213,11 @@ alloc_max_size (void)
   if (alloc_object_size_limit)
     return alloc_object_size_limit;
 
-  alloc_object_size_limit
-    = build_int_cst (size_type_node, warn_alloc_size_limit);
+  HOST_WIDE_INT limit = warn_alloc_size_limit;
+  if (limit == HOST_WIDE_INT_MAX)
+    limit = tree_to_shwi (TYPE_MAX_VALUE (ptrdiff_type_node));
+
+  alloc_object_size_limit = build_int_cst (size_type_node, limit);
 
   return alloc_object_size_limit;
 }
@@ -1252,7 +1246,7 @@ get_size_range (tree exp, tree range[2], bool allow_zero /* = false */)
   bool integral = INTEGRAL_TYPE_P (exptype);
 
   wide_int min, max;
-  enum value_range_type range_type;
+  enum value_range_kind range_type;
 
   if (integral)
     range_type = determine_value_range (exp, &min, &max);
@@ -1339,9 +1333,10 @@ get_size_range (tree exp, tree range[2], bool allow_zero /* = false */)
 /* Diagnose a call EXP to function FN decorated with attribute alloc_size
    whose argument numbers given by IDX with values given by ARGS exceed
    the maximum object size or cause an unsigned oveflow (wrapping) when
-   multiplied.  When ARGS[0] is null the function does nothing.  ARGS[1]
-   may be null for functions like malloc, and non-null for those like
-   calloc that are decorated with a two-argument attribute alloc_size.  */
+   multiplied.  FN is null when EXP is a call via a function pointer.
+   When ARGS[0] is null the function does nothing.  ARGS[1] may be null
+   for functions like malloc, and non-null for those like calloc that
+   are decorated with a two-argument attribute alloc_size.  */
 
 void
 maybe_warn_alloc_args_overflow (tree fn, tree exp, tree args[2], int idx[2])
@@ -1354,6 +1349,8 @@ maybe_warn_alloc_args_overflow (tree fn, tree exp, tree args[2], int idx[2])
 
   location_t loc = EXPR_LOCATION (exp);
 
+  tree fntype = fn ? TREE_TYPE (fn) : TREE_TYPE (TREE_TYPE (exp));
+  built_in_function fncode = fn ? DECL_FUNCTION_CODE (fn) : BUILT_IN_NONE;
   bool warned = false;
 
   /* Validate each argument individually.  */
@@ -1379,11 +1376,11 @@ maybe_warn_alloc_args_overflow (tree fn, tree exp, tree args[2], int idx[2])
 		 friends.
 		 Also avoid issuing the warning for calls to function named
 		 "alloca".  */
-	      if ((DECL_FUNCTION_CODE (fn) == BUILT_IN_ALLOCA
+	      if ((fncode == BUILT_IN_ALLOCA
 		   && IDENTIFIER_LENGTH (DECL_NAME (fn)) != 6)
-		  || (DECL_FUNCTION_CODE (fn) != BUILT_IN_ALLOCA
+		  || (fncode != BUILT_IN_ALLOCA
 		      && !lookup_attribute ("returns_nonnull",
-					    TYPE_ATTRIBUTES (TREE_TYPE (fn)))))
+					    TYPE_ATTRIBUTES (fntype))))
 		warned = warning_at (loc, OPT_Walloc_zero,
 				     "%Kargument %i value is zero",
 				     exp, idx[i] + 1);
@@ -1395,9 +1392,10 @@ maybe_warn_alloc_args_overflow (tree fn, tree exp, tree args[2], int idx[2])
 		 size overflow.  There's no good way to detect C++98 here
 		 so avoid diagnosing these calls for all C++ modes.  */
 	      if (i == 0
+		  && fn
 		  && !args[1]
 		  && lang_GNU_CXX ()
-		  && DECL_IS_OPERATOR_NEW (fn)
+		  && DECL_IS_OPERATOR_NEW_P (fn)
 		  && integer_all_onesp (args[i]))
 		continue;
 
@@ -1478,7 +1476,7 @@ maybe_warn_alloc_args_overflow (tree fn, tree exp, tree args[2], int idx[2])
 	}
     }
 
-  if (warned)
+  if (warned && fn)
     {
       location_t fnloc = DECL_SOURCE_LOCATION (fn);
 
@@ -1500,6 +1498,7 @@ tree
 get_attr_nonstring_decl (tree expr, tree *ref)
 {
   tree decl = expr;
+  tree var = NULL_TREE;
   if (TREE_CODE (decl) == SSA_NAME)
     {
       gimple *def = SSA_NAME_DEF_STMT (decl);
@@ -1512,17 +1511,25 @@ get_attr_nonstring_decl (tree expr, tree *ref)
 	      || code == VAR_DECL)
 	    decl = gimple_assign_rhs1 (def);
 	}
-      else if (tree var = SSA_NAME_VAR (decl))
-	decl = var;
+      else
+	var = SSA_NAME_VAR (decl);
     }
 
   if (TREE_CODE (decl) == ADDR_EXPR)
     decl = TREE_OPERAND (decl, 0);
 
+  /* To simplify calling code, store the referenced DECL regardless of
+     the attribute determined below, but avoid storing the SSA_NAME_VAR
+     obtained above (it's not useful for dataflow purposes).  */
   if (ref)
     *ref = decl;
 
-  if (TREE_CODE (decl) == ARRAY_REF)
+  /* Use the SSA_NAME_VAR that was determined above to see if it's
+     declared nonstring.  Otherwise drill down into the referenced
+     DECL.  */
+  if (var)
+    decl = var;
+  else if (TREE_CODE (decl) == ARRAY_REF)
     decl = TREE_OPERAND (decl, 0);
   else if (TREE_CODE (decl) == COMPONENT_REF)
     decl = TREE_OPERAND (decl, 1);
@@ -1542,20 +1549,25 @@ get_attr_nonstring_decl (tree expr, tree *ref)
 void
 maybe_warn_nonstring_arg (tree fndecl, tree exp)
 {
-  if (!fndecl || DECL_BUILT_IN_CLASS (fndecl) != BUILT_IN_NORMAL)
+  if (!fndecl || !fndecl_built_in_p (fndecl, BUILT_IN_NORMAL))
     return;
 
-  if (TREE_NO_WARNING (exp))
+  if (TREE_NO_WARNING (exp) || !warn_stringop_overflow)
     return;
 
+  /* Avoid clearly invalid calls (more checking done below).  */
   unsigned nargs = call_expr_nargs (exp);
+  if (!nargs)
+    return;
 
   /* The bound argument to a bounded string function like strncpy.  */
   tree bound = NULL_TREE;
 
-  /* The range of lengths of a string argument to one of the comparison
-     functions.  If the length is less than the bound it is used instead.  */
-  tree lenrng[2] = { NULL_TREE, NULL_TREE };
+  /* The longest known or possible string argument to one of the comparison
+     functions.  If the length is less than the bound it is used instead.
+     Since the length is only used for warning and not for code generation
+     disable strict mode in the calls to get_range_strlen below.  */
+  tree maxlen = NULL_TREE;
 
   /* It's safe to call "bounded" string functions with a non-string
      argument since the functions provide an explicit bound for this
@@ -1573,11 +1585,17 @@ maybe_warn_nonstring_arg (tree fndecl, tree exp)
 	   the range of their known or possible lengths and use it
 	   conservatively as the bound for the unbounded function,
 	   and to adjust the range of the bound of the bounded ones.  */
-	for (unsigned argno = 0; argno < nargs && !*lenrng; argno ++)
+	for (unsigned argno = 0;
+	     argno < MIN (nargs, 2)
+	       && !(maxlen && TREE_CODE (maxlen) == INTEGER_CST); argno++)
 	  {
 	    tree arg = CALL_EXPR_ARG (exp, argno);
 	    if (!get_attr_nonstring_decl (arg))
-	      get_range_strlen (arg, lenrng);
+	      {
+		c_strlen_data lendata = { };
+		get_range_strlen (arg, &lendata, /* eltsize = */ 1);
+		maxlen = lendata.maxbound;
+	      }
 	  }
       }
       /* Fall through.  */
@@ -1585,12 +1603,12 @@ maybe_warn_nonstring_arg (tree fndecl, tree exp)
     case BUILT_IN_STRNCAT:
     case BUILT_IN_STPNCPY:
     case BUILT_IN_STRNCPY:
-      if (2 < nargs)
+      if (nargs > 2)
 	bound = CALL_EXPR_ARG (exp, 2);
       break;
 
     case BUILT_IN_STRNDUP:
-      if (1 < nargs)
+      if (nargs > 1)
 	bound = CALL_EXPR_ARG (exp, 1);
       break;
 
@@ -1598,9 +1616,12 @@ maybe_warn_nonstring_arg (tree fndecl, tree exp)
       {
 	tree arg = CALL_EXPR_ARG (exp, 0);
 	if (!get_attr_nonstring_decl (arg))
-	  get_range_strlen (arg, lenrng);
-
-	if (1 < nargs)
+	  {
+	    c_strlen_data lendata = { };
+	    get_range_strlen (arg, &lendata, /* eltsize = */ 1);
+	    maxlen = lendata.maxbound;
+	  }
+	if (nargs > 1)
 	  bound = CALL_EXPR_ARG (exp, 1);
 	break;
       }
@@ -1640,30 +1661,28 @@ maybe_warn_nonstring_arg (tree fndecl, tree exp)
 	}
     }
 
-  if (*lenrng)
+  if (maxlen && !integer_all_onesp (maxlen))
     {
       /* Add one for the nul.  */
-      lenrng[0] = const_binop (PLUS_EXPR, TREE_TYPE (lenrng[0]),
-			       lenrng[0], size_one_node);
-      lenrng[1] = const_binop (PLUS_EXPR, TREE_TYPE (lenrng[1]),
-			       lenrng[1], size_one_node);
+      maxlen = const_binop (PLUS_EXPR, TREE_TYPE (maxlen), maxlen,
+			    size_one_node);
 
       if (!bndrng[0])
 	{
 	  /* Conservatively use the upper bound of the lengths for
 	     both the lower and the upper bound of the operation.  */
-	  bndrng[0] = lenrng[1];
-	  bndrng[1] = lenrng[1];
+	  bndrng[0] = maxlen;
+	  bndrng[1] = maxlen;
 	  bound = void_type_node;
 	}
-      else
+      else if (maxlen)
 	{
 	  /* Replace the bound on the operation with the upper bound
 	     of the length of the string if the latter is smaller.  */
-	  if (tree_int_cst_lt (lenrng[1], bndrng[0]))
-	    bndrng[0] = lenrng[1];
-	  else if (tree_int_cst_lt (lenrng[1], bndrng[1]))
-	    bndrng[1] = lenrng[1];
+	  if (tree_int_cst_lt (maxlen, bndrng[0]))
+	    bndrng[0] = maxlen;
+	  else if (tree_int_cst_lt (maxlen, bndrng[1]))
+	    bndrng[1] = maxlen;
 	}
     }
 
@@ -1773,6 +1792,7 @@ maybe_warn_nonstring_arg (tree fndecl, tree exp)
 
       bool warned = false;
 
+      auto_diagnostic_group d;
       if (wi::ltu_p (asize, wibnd))
 	{
 	  if (bndrng[0] == bndrng[1])
@@ -1920,14 +1940,13 @@ initialize_argument_information (int num_actuals ATTRIBUTE_UNUSED,
 
   bitmap_obstack_release (NULL);
 
-  /* Extract attribute alloc_size and if set, store the indices of
-     the corresponding arguments in ALLOC_IDX, and then the actual
-     argument(s) at those indices in ALLOC_ARGS.  */
+  /* Extract attribute alloc_size from the type of the called expression
+     (which could be a function or a function pointer) and if set, store
+     the indices of the corresponding arguments in ALLOC_IDX, and then
+     the actual argument(s) at those indices in ALLOC_ARGS.  */
   int alloc_idx[2] = { -1, -1 };
-  if (tree alloc_size
-      = (fndecl ? lookup_attribute ("alloc_size",
-				    TYPE_ATTRIBUTES (TREE_TYPE (fndecl)))
-	 : NULL_TREE))
+  if (tree alloc_size = lookup_attribute ("alloc_size",
+					  TYPE_ATTRIBUTES (fntype)))
     {
       tree args = TREE_VALUE (alloc_size);
       alloc_idx[0] = TREE_INT_CST_LOW (TREE_VALUE (args)) - 1;
@@ -2104,10 +2123,7 @@ initialize_argument_information (int num_actuals ATTRIBUTE_UNUSED,
 						argpos < n_named_args);
 
       if (args[i].reg && CONST_INT_P (args[i].reg))
-	{
-	  args[i].special_slot = args[i].reg;
-	  args[i].reg = NULL;
-	}
+	args[i].reg = NULL;
 
       /* If this is a sibling call and the machine has register windows, the
 	 register window has to be unwinded before calling the routine, so
@@ -3120,7 +3136,7 @@ can_implement_as_sibling_call_p (tree exp,
     }
 
 #ifdef REG_PARM_STACK_SPACE
-  /* If outgoing reg parm stack space changes, we can not do sibcall.  */
+  /* If outgoing reg parm stack space changes, we cannot do sibcall.  */
   if (OUTGOING_REG_PARM_STACK_SPACE (funtype)
       != OUTGOING_REG_PARM_STACK_SPACE (TREE_TYPE (current_function_decl))
       || (reg_parm_stack_space != REG_PARM_STACK_SPACE (current_function_decl)))
@@ -3208,6 +3224,19 @@ can_implement_as_sibling_call_p (tree exp,
 
   /* All checks passed.  */
   return true;
+}
+
+/* Update stack alignment when the parameter is passed in the stack
+   since the outgoing parameter requires extra alignment on the calling
+   function side. */
+
+static void
+update_stack_alignment_for_call (struct locate_and_pad_arg_data *locate)
+{
+  if (crtl->stack_alignment_needed < locate->boundary)
+    crtl->stack_alignment_needed = locate->boundary;
+  if (crtl->preferred_stack_boundary < locate->boundary)
+    crtl->preferred_stack_boundary = locate->boundary;
 }
 
 /* Generate all the code for a CALL_EXPR exp
@@ -3606,12 +3635,33 @@ expand_call (tree exp, rtx target, int ignore)
      pushed these optimizations into -O2.  Don't try if we're already
      expanding a call, as that means we're an argument.  Don't try if
      there's cleanups, as we know there's code to follow the call.  */
-
   if (currently_expanding_call++ != 0
-      || !flag_optimize_sibling_calls
+      || (!flag_optimize_sibling_calls && !CALL_FROM_THUNK_P (exp))
       || args_size.var
       || dbg_cnt (tail_call) == false)
     try_tail_call = 0;
+
+  /* Workaround buggy C/C++ wrappers around Fortran routines with
+     character(len=constant) arguments if the hidden string length arguments
+     are passed on the stack; if the callers forget to pass those arguments,
+     attempting to tail call in such routines leads to stack corruption.
+     Avoid tail calls in functions where at least one such hidden string
+     length argument is passed (partially or fully) on the stack in the
+     caller and the callee needs to pass any arguments on the stack.
+     See PR90329.  */
+  if (try_tail_call && maybe_ne (args_size.constant, 0))
+    for (tree arg = DECL_ARGUMENTS (current_function_decl);
+	 arg; arg = DECL_CHAIN (arg))
+      if (DECL_HIDDEN_STRING_LENGTH (arg) && DECL_INCOMING_RTL (arg))
+	{
+	  subrtx_iterator::array_type array;
+	  FOR_EACH_SUBRTX (iter, array, DECL_INCOMING_RTL (arg), NONCONST)
+	    if (MEM_P (*iter))
+	      {
+		try_tail_call = 0;
+		break;
+	      }
+	}
 
   /* If the user has marked the function as requiring tail-call
      optimization, attempt it.  */
@@ -3666,6 +3716,12 @@ expand_call (tree exp, rtx target, int ignore)
   /* Ensure current function's preferred stack boundary is at least
      what we need.  Stack alignment may also increase preferred stack
      boundary.  */
+  for (i = 0; i < num_actuals; i++)
+    if (reg_parm_stack_space > 0
+	|| args[i].reg == 0
+	|| args[i].partial != 0
+	|| args[i].pass_on_stack)
+      update_stack_alignment_for_call (&args[i].locate);
   if (crtl->preferred_stack_boundary < preferred_stack_boundary)
     crtl->preferred_stack_boundary = preferred_stack_boundary;
   else
@@ -4270,7 +4326,7 @@ expand_call (tree exp, rtx target, int ignore)
 
 	  emit_move_insn (temp, valreg);
 
-	  /* The return value from a malloc-like function can not alias
+	  /* The return value from a malloc-like function cannot alias
 	     anything else.  */
 	  last = get_last_insn ();
 	  add_reg_note (last, REG_NOALIAS, temp);
@@ -4923,6 +4979,12 @@ emit_library_call_value_1 (int retval, rtx orgfun, rtx value,
 
       targetm.calls.function_arg_advance (args_so_far, mode, (tree) 0, true);
     }
+
+  for (int i = 0; i < nargs; i++)
+    if (reg_parm_stack_space > 0
+	|| argvec[i].reg == 0
+	|| argvec[i].partial != 0)
+      update_stack_alignment_for_call (&argvec[i].locate);
 
   /* If this machine requires an external definition for library
      functions, write one out.  */

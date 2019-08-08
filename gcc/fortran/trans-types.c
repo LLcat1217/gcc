@@ -1,5 +1,5 @@
 /* Backend support for Fortran 95 basic types and derived types.
-   Copyright (C) 2002-2018 Free Software Foundation, Inc.
+   Copyright (C) 2002-2019 Free Software Foundation, Inc.
    Contributed by Paul Brook <paul@nowt.org>
    and Steven Bosscher <s.bosscher@student.tudelft.nl>
 
@@ -216,43 +216,6 @@ get_int_kind_from_node (tree type)
       return gfc_integer_kinds[i].kind;
 
   return -1;
-}
-
-/* Return a typenode for the "standard" C type with a given name.  */
-static tree
-get_typenode_from_name (const char *name)
-{
-  if (name == NULL || *name == '\0')
-    return NULL_TREE;
-
-  if (strcmp (name, "char") == 0)
-    return char_type_node;
-  if (strcmp (name, "unsigned char") == 0)
-    return unsigned_char_type_node;
-  if (strcmp (name, "signed char") == 0)
-    return signed_char_type_node;
-
-  if (strcmp (name, "short int") == 0)
-    return short_integer_type_node;
-  if (strcmp (name, "short unsigned int") == 0)
-    return short_unsigned_type_node;
-
-  if (strcmp (name, "int") == 0)
-    return integer_type_node;
-  if (strcmp (name, "unsigned int") == 0)
-    return unsigned_type_node;
-
-  if (strcmp (name, "long int") == 0)
-    return long_integer_type_node;
-  if (strcmp (name, "long unsigned int") == 0)
-    return long_unsigned_type_node;
-
-  if (strcmp (name, "long long int") == 0)
-    return long_long_integer_type_node;
-  if (strcmp (name, "long long unsigned int") == 0)
-    return long_long_unsigned_type_node;
-
-  gcc_unreachable ();
 }
 
 static int
@@ -1213,7 +1176,8 @@ gfc_typenode_for_spec (gfc_typespec * spec, int codim)
         {
           spec->type = BT_INTEGER;
           spec->kind = gfc_index_integer_kind;
-          spec->f90_type = BT_VOID;
+	  spec->f90_type = BT_VOID;
+	  spec->is_c_interop = 1;  /* Mark as escaping later.  */
         }
       break;
     case BT_VOID:
@@ -1230,6 +1194,9 @@ gfc_typenode_for_spec (gfc_typespec * spec, int codim)
 	    basetype = pfunc_type_node;
 	}
        break;
+    case BT_PROCEDURE:
+      basetype = pfunc_type_node;
+      break;
     default:
       gcc_unreachable ();
     }
@@ -1850,11 +1817,11 @@ gfc_get_array_descriptor_base (int dimen, int codimen, bool restricted)
   TYPE_NAMELESS (fat_type) = 1;
 
   /* Add the data member as the first element of the descriptor.  */
-  decl = gfc_add_field_to_struct_1 (fat_type,
-				    get_identifier ("data"),
-				    (restricted
-				     ? prvoid_type_node
-				     : ptr_type_node), &chain);
+  gfc_add_field_to_struct_1 (fat_type,
+			     get_identifier ("data"),
+			     (restricted
+			      ? prvoid_type_node
+			      : ptr_type_node), &chain);
 
   /* Add the base component.  */
   decl = gfc_add_field_to_struct_1 (fat_type,
@@ -2994,7 +2961,8 @@ create_fn_spec (gfc_symbol *sym, tree fntype)
 		    || f->sym->ts.u.derived->attr.pointer_comp))
 	    || (f->sym->ts.type == BT_CLASS
 		&& (CLASS_DATA (f->sym)->ts.u.derived->attr.proc_pointer_comp
-		    || CLASS_DATA (f->sym)->ts.u.derived->attr.pointer_comp)))
+		    || CLASS_DATA (f->sym)->ts.u.derived->attr.pointer_comp))
+	    || (f->sym->ts.type == BT_INTEGER && f->sym->ts.is_c_interop))
 	  spec[spec_len++] = '.';
 	else if (f->sym->attr.intent == INTENT_IN)
 	  spec[spec_len++] = 'r';
@@ -3007,9 +2975,68 @@ create_fn_spec (gfc_symbol *sym, tree fntype)
   return build_type_attribute_variant (fntype, tmp);
 }
 
+/* Helper function - if we do not find an interface for a procedure,
+   construct it from the actual arglist.  Luckily, this can only
+   happen for call by reference, so the information we actually need
+   to provide (and which would be impossible to guess from the call
+   itself) is not actually needed.  */
+
+static void
+get_formal_from_actual_arglist (gfc_symbol *sym, gfc_actual_arglist *actual_args)
+{
+  gfc_actual_arglist *a;
+  gfc_formal_arglist **f;
+  gfc_symbol *s;
+  char name[GFC_MAX_SYMBOL_LEN + 1];
+  static int var_num;
+
+  f = &sym->formal;
+  for (a = actual_args; a != NULL; a = a->next)
+    {
+      (*f) = gfc_get_formal_arglist ();
+      if (a->expr)
+	{
+	  snprintf (name, GFC_MAX_SYMBOL_LEN, "_formal_%d", var_num ++);
+	  gfc_get_symbol (name, gfc_current_ns, &s);
+	  if (a->expr->ts.type == BT_PROCEDURE)
+	    {
+	      s->attr.flavor = FL_PROCEDURE;
+	    }
+	  else
+	    {
+	      s->ts = a->expr->ts;
+
+	      if (s->ts.type == BT_CHARACTER)
+		  s->ts.u.cl = gfc_get_charlen ();
+
+	      s->ts.deferred = 0;
+	      s->ts.is_iso_c = 0;
+	      s->ts.is_c_interop = 0;
+	      s->attr.flavor = FL_VARIABLE;
+	      if (a->expr->rank > 0)
+		{
+		  s->attr.dimension = 1;
+		  s->as = gfc_get_array_spec ();
+		  s->as->rank = 1;
+		  s->as->lower[0] = gfc_get_int_expr (gfc_index_integer_kind,
+						      &a->expr->where, 1);
+		  s->as->upper[0] = NULL;
+		  s->as->type = AS_ASSUMED_SIZE;
+		}
+	    }
+	  s->attr.dummy = 1;
+	  s->attr.intent = INTENT_UNKNOWN;
+	  (*f)->sym = s;
+	}
+      else  /* If a->expr is NULL, this is an alternate rerturn.  */
+	(*f)->sym = NULL;
+
+      f = &((*f)->next);
+    }
+}
 
 tree
-gfc_get_function_type (gfc_symbol * sym)
+gfc_get_function_type (gfc_symbol * sym, gfc_actual_arglist *actual_args)
 {
   tree type;
   vec<tree, va_gc> *typelist = NULL;
@@ -3067,6 +3094,10 @@ gfc_get_function_type (gfc_symbol * sym)
 	    vec_safe_push (typelist, build_pointer_type(gfc_charlen_type_node));
 	}
     }
+  if (sym->backend_decl == error_mark_node && actual_args != NULL
+      && sym->formal == NULL && (sym->attr.proc == PROC_EXTERNAL
+				 || sym->attr.proc == PROC_UNKNOWN))
+    get_formal_from_actual_arglist (sym, actual_args);
 
   /* Build the argument types for the function.  */
   for (f = gfc_sym_get_dummy_args (sym); f; f = f->next)

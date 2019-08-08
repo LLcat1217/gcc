@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 B o d y                                  --
 --                                                                          --
---          Copyright (C) 1998-2018, Free Software Foundation, Inc.         --
+--          Copyright (C) 1998-2019, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -1876,7 +1876,7 @@ package body Xref_Lib is
             end if;
 
          exception
-            when No_Xref_Information =>  null;
+            when No_Xref_Information => null;
          end;
       end loop;
    end Search_Xref;

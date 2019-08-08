@@ -1,5 +1,5 @@
 /* Common hooks for Synopsys DesignWare ARC
-   Copyright (C) 1994-2018 Free Software Foundation, Inc.
+   Copyright (C) 1994-2019 Free Software Foundation, Inc.
    Contributor: Joern Rennecke <joern.rennecke@embecosm.com>
 		on behalf of Synopsys Inc.
 		Claudiu Zissulescu <Claudiu.Zissulescu@synopsys.com>
@@ -59,6 +59,7 @@ static const struct default_options arc_option_optimization_table[] =
     { OPT_LEVELS_SIZE, OPT_mq_class, NULL, 1 },
     { OPT_LEVELS_SIZE, OPT_mcase_vector_pcrel, NULL, 1 },
     { OPT_LEVELS_SIZE, OPT_msize_level_, NULL, 3 },
+    { OPT_LEVELS_SIZE, OPT_mmillicode, NULL, 1 },
     { OPT_LEVELS_1_PLUS, OPT_fomit_frame_pointer, NULL, 1 },
     { OPT_LEVELS_3_PLUS_SPEED_ONLY, OPT_msize_level_, NULL, 0 },
     { OPT_LEVELS_3_PLUS_SPEED_ONLY, OPT_malign_call, NULL, 1 },
@@ -83,7 +84,7 @@ arc_handle_option (struct gcc_options *opts,
 	 our caller, so comparing arc_cpu with PROCESSOR_NONE is pointless.  */
 
       if (mcpu_seen != PROCESSOR_NONE && mcpu_seen != value)
-	warning_at (loc, 0, "multiple -mcpu= options specified.");
+	warning_at (loc, 0, "multiple %<-mcpu=%> options specified.");
       mcpu_seen = value;
       break;
 

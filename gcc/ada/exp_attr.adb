@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 B o d y                                  --
 --                                                                          --
---          Copyright (C) 1992-2018, Free Software Foundation, Inc.         --
+--          Copyright (C) 1992-2019, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -39,6 +39,7 @@ with Exp_Pakd; use Exp_Pakd;
 with Exp_Strm; use Exp_Strm;
 with Exp_Tss;  use Exp_Tss;
 with Exp_Util; use Exp_Util;
+with Expander; use Expander;
 with Freeze;   use Freeze;
 with Gnatvsn;  use Gnatvsn;
 with Itypes;   use Itypes;
@@ -639,7 +640,7 @@ package body Exp_Attr is
 
          Stmts := No_List;
 
-         --  Validate componants
+         --  Validate components
 
          Validate_Component_List
            (Obj_Id    => Obj_Id,
@@ -1384,12 +1385,15 @@ package body Exp_Attr is
                Stmts     : List_Id;
 
             begin
+               Func_Id := Make_Temporary (Loc, 'F');
+
                --  Wrap the condition of the while loop in a Boolean function.
                --  This avoids the duplication of the same code which may lead
                --  to gigi issues with respect to multiple declaration of the
                --  same entity in the presence of side effects or checks. Note
-               --  that the condition actions must also be relocated to the
-               --  wrapping function.
+               --  that the condition actions must also be relocated into the
+               --  wrapping function because they may contain itypes, e.g. in
+               --  the case of a comparison involving slices.
 
                --  Generate:
                --    <condition actions>
@@ -1403,7 +1407,9 @@ package body Exp_Attr is
 
                Append_To (Stmts,
                  Make_Simple_Return_Statement (Loc,
-                   Expression => Relocate_Node (Condition (Scheme))));
+                   Expression =>
+                     New_Copy_Tree (Condition (Scheme),
+                       New_Scope => Func_Id)));
 
                --  Generate:
                --    function Fnn return Boolean is
@@ -1411,7 +1417,6 @@ package body Exp_Attr is
                --       <Stmts>
                --    end Fnn;
 
-               Func_Id   := Make_Temporary (Loc, 'F');
                Func_Decl :=
                  Make_Subprogram_Body (Loc,
                    Specification              =>
@@ -1693,103 +1698,6 @@ package body Exp_Attr is
       --  generate conditionals in the code, so check the relevant restriction.
 
       Check_Restriction (No_Implicit_Conditionals, N);
-
-      --  In Modify_Tree_For_C mode, we rewrite as an if expression
-
-      if Modify_Tree_For_C then
-         declare
-            Loc   : constant Source_Ptr := Sloc (N);
-            Typ   : constant Entity_Id  := Etype (N);
-            Expr  : constant Node_Id    := First (Expressions (N));
-            Left  : constant Node_Id    := Relocate_Node (Expr);
-            Right : constant Node_Id    := Relocate_Node (Next (Expr));
-
-            function Make_Compare (Left, Right : Node_Id) return Node_Id;
-            --  Returns Left >= Right for Max, Left <= Right for Min
-
-            ------------------
-            -- Make_Compare --
-            ------------------
-
-            function Make_Compare (Left, Right : Node_Id) return Node_Id is
-            begin
-               if Attribute_Name (N) = Name_Max then
-                  return
-                    Make_Op_Ge (Loc,
-                      Left_Opnd  => Left,
-                      Right_Opnd => Right);
-               else
-                  return
-                    Make_Op_Le (Loc,
-                      Left_Opnd  => Left,
-                      Right_Opnd => Right);
-               end if;
-            end Make_Compare;
-
-         --  Start of processing for Min_Max
-
-         begin
-            --  If both Left and Right are side effect free, then we can just
-            --  use Duplicate_Expr to duplicate the references and return
-
-            --    (if Left >=|<= Right then Left else Right)
-
-            if Side_Effect_Free (Left) and then Side_Effect_Free (Right) then
-               Rewrite (N,
-                 Make_If_Expression (Loc,
-                   Expressions => New_List (
-                     Make_Compare (Left, Right),
-                     Duplicate_Subexpr_No_Checks (Left),
-                     Duplicate_Subexpr_No_Checks (Right))));
-
-            --  Otherwise we generate declarations to capture the values.
-
-            --  The translation is
-
-            --    do
-            --      T1 : constant typ := Left;
-            --      T2 : constant typ := Right;
-            --    in
-            --      (if T1 >=|<= T2 then T1 else T2)
-            --    end;
-
-            else
-               declare
-                  T1 : constant Entity_Id := Make_Temporary (Loc, 'T', Left);
-                  T2 : constant Entity_Id := Make_Temporary (Loc, 'T', Right);
-
-               begin
-                  Rewrite (N,
-                    Make_Expression_With_Actions (Loc,
-                      Actions    => New_List (
-                        Make_Object_Declaration (Loc,
-                          Defining_Identifier => T1,
-                          Constant_Present    => True,
-                          Object_Definition   =>
-                            New_Occurrence_Of (Etype (Left), Loc),
-                          Expression          => Relocate_Node (Left)),
-
-                        Make_Object_Declaration (Loc,
-                          Defining_Identifier => T2,
-                          Constant_Present    => True,
-                          Object_Definition   =>
-                            New_Occurrence_Of (Etype (Right), Loc),
-                          Expression          => Relocate_Node (Right))),
-
-                      Expression =>
-                        Make_If_Expression (Loc,
-                          Expressions => New_List (
-                            Make_Compare
-                              (New_Occurrence_Of (T1, Loc),
-                               New_Occurrence_Of (T2, Loc)),
-                               New_Occurrence_Of (T1, Loc),
-                               New_Occurrence_Of (T2, Loc)))));
-               end;
-            end if;
-
-            Analyze_And_Resolve (N, Typ);
-         end;
-      end if;
    end Expand_Min_Max_Attribute;
 
    ----------------------------------
@@ -3376,6 +3284,13 @@ package body Exp_Attr is
 
          Expr := Unchecked_Convert_To (Ptyp, First (Exprs));
 
+         --  Ensure that the expression is not truncated since the "bad" bits
+         --  are desired.
+
+         if Nkind (Expr) = N_Unchecked_Type_Conversion then
+            Set_No_Truncation (Expr);
+         end if;
+
          Insert_Action (N,
            Make_Raise_Constraint_Error (Loc,
              Condition =>
@@ -3626,7 +3541,7 @@ package body Exp_Attr is
       --  We transform
 
       --     fixtype'Fixed_Value (integer-value)
-      --     inttype'Fixed_Value (fixed-value)
+      --     inttype'Integer_Value (fixed-value)
 
       --  into
 
@@ -3635,69 +3550,30 @@ package body Exp_Attr is
 
       --  respectively.
 
-      --  We do all the required analysis of the conversion here, because we do
-      --  not want this to go through the fixed-point conversion circuits. Note
-      --  that the back end always treats fixed-point as equivalent to the
-      --  corresponding integer type anyway.
-      --  However, in order to remove the handling of Do_Range_Check from the
-      --  backend, we force the generation of a check on the result by
-      --  setting the result type appropriately. Apply_Conversion_Checks
-      --  will generate the required expansion.
+      --  We set Conversion_OK on the conversion because we do not want it
+      --  to go through the fixed-point conversion circuits.
 
       when Attribute_Fixed_Value
          | Attribute_Integer_Value
       =>
-         Rewrite (N,
-           Make_Type_Conversion (Loc,
-             Subtype_Mark => New_Occurrence_Of (Entity (Pref), Loc),
-             Expression   => Relocate_Node (First (Exprs))));
+         Rewrite (N, OK_Convert_To (Entity (Pref), First (Exprs)));
 
-         --  Indicate that the result of the conversion may require a
-         --  range check (see below);
-
-         Set_Etype (N, Base_Type (Entity (Pref)));
-         Set_Analyzed (N);
-
-         --  Note: it might appear that a properly analyzed unchecked
+         --  Note that it might appear that a properly analyzed unchecked
          --  conversion would be just fine here, but that's not the case,
-         --  since the full range checks performed by the following code
+         --  since the full range checks performed by the following calls
          --  are critical.
-         --  Given that Fixed-point conversions are not further expanded
-         --  to prevent the involvement of real type operations we have to
-         --  construct two checks explicitly: one on the operand, and one
-         --  on the result. This used to be done in part in the back-end,
-         --  but for other targets (E.g. LLVM) it is preferable to create
-         --  the tests in full in the front-end.
 
-         if Is_Fixed_Point_Type (Etype (N)) then
-            declare
-               Loc     : constant Source_Ptr := Sloc (N);
-               Equiv_T : constant Entity_Id := Make_Temporary (Loc, 'T', N);
-               Expr    : constant Node_Id := Expression (N);
-               Fst     : constant Entity_Id := Root_Type (Etype (N));
-               Decl    : Node_Id;
+         Apply_Type_Conversion_Checks (N);
 
-            begin
-               Decl := Make_Full_Type_Declaration (Sloc (N),
-                 Equiv_T,
-                 Type_Definition =>
-                    Make_Signed_Integer_Type_Definition (Loc,
-                      Low_Bound => Make_Integer_Literal (Loc,
-                        Intval => Corresponding_Integer_Value
-                                    (Type_Low_Bound (Fst))),
-                      High_Bound => Make_Integer_Literal (Loc,
-                        Intval => Corresponding_Integer_Value
-                                    (Type_High_Bound (Fst)))));
-               Insert_Action (N, Decl);
+         --  Note that Apply_Type_Conversion_Checks only deals with the
+         --  overflow checks on conversions involving fixed-point types
+         --  so we must apply range checks manually on them and expand.
 
-               --  Verify that the conversion is possible.
-               Generate_Range_Check
-                 (Expr, Equiv_T, CE_Overflow_Check_Failed);
+         Apply_Scalar_Range_Check
+           (Expression (N), Etype (N), Fixed_Int => True);
 
-               --  and verify that the result is in range.
-               Generate_Range_Check (N, Etype (N), CE_Range_Check_Failed);
-            end;
-         end if;
+         Set_Analyzed (N);
+         Expand (N);
 
       -----------
       -- Floor --
@@ -4088,11 +3964,14 @@ package body Exp_Attr is
 
                declare
                   Rtyp : constant Entity_Id := Root_Type (P_Type);
-                  Expr : Node_Id;
+
+                  Expr    : Node_Id; -- call to Descendant_Tag
+                  Get_Tag : Node_Id; -- expression to read the 'Tag
 
                begin
                   --  Read the internal tag (RM 13.13.2(34)) and use it to
-                  --  initialize a dummy tag value. We used to generate:
+                  --  initialize a dummy tag value. We used to unconditionally
+                  --  generate:
                   --
                   --     Descendant_Tag (String'Input (Strm), P_Type);
                   --
@@ -4102,6 +3981,11 @@ package body Exp_Attr is
                   --  String_Input_Tag, which does the same thing as
                   --  String_Input_Blk_IO, except that if the String is
                   --  absurdly long, it raises an exception.
+                  --
+                  --  However, if the No_Stream_Optimizations restriction
+                  --  is active, we disable this unnecessary attempt at
+                  --  robustness; we really need to read the string
+                  --  character-by-character.
                   --
                   --  This value is used only to provide a controlling
                   --  argument for the eventual _Input call. Descendant_Tag is
@@ -4117,18 +4001,30 @@ package body Exp_Attr is
                   --  this constant in Cntrl, but this caused a secondary stack
                   --  leak.
 
+                  if Restriction_Active (No_Stream_Optimizations) then
+                     Get_Tag :=
+                       Make_Attribute_Reference (Loc,
+                         Prefix         =>
+                           New_Occurrence_Of (Standard_String, Loc),
+                         Attribute_Name => Name_Input,
+                         Expressions    => New_List (
+                           Relocate_Node (Duplicate_Subexpr (Strm))));
+                  else
+                     Get_Tag :=
+                       Make_Function_Call (Loc,
+                         Name                   =>
+                           New_Occurrence_Of
+                             (RTE (RE_String_Input_Tag), Loc),
+                         Parameter_Associations => New_List (
+                           Relocate_Node (Duplicate_Subexpr (Strm))));
+                  end if;
+
                   Expr :=
                     Make_Function_Call (Loc,
                       Name                   =>
                         New_Occurrence_Of (RTE (RE_Descendant_Tag), Loc),
                       Parameter_Associations => New_List (
-                        Make_Function_Call (Loc,
-                          Name                   =>
-                            New_Occurrence_Of
-                              (RTE (RE_String_Input_Tag), Loc),
-                          Parameter_Associations => New_List (
-                            Relocate_Node (Duplicate_Subexpr (Strm)))),
-
+                        Get_Tag,
                         Make_Attribute_Reference (Loc,
                           Prefix         => New_Occurrence_Of (P_Type, Loc),
                           Attribute_Name => Name_Tag)));
@@ -4235,6 +4131,11 @@ package body Exp_Attr is
 
       when Attribute_Invalid_Value =>
          Rewrite (N, Get_Simple_Init_Val (Ptyp, N));
+
+         --  The value produced may be a conversion of a literal, which must be
+         --  resolved to establish its proper type.
+
+         Analyze_And_Resolve (N);
 
       ----------
       -- Last --
@@ -6599,15 +6500,25 @@ package body Exp_Attr is
       ----------------
 
       --  Transforms System'To_Address (X) and System.Address'Ref (X) into
-      --  unchecked conversion from (integral) type of X to type address.
+      --  unchecked conversion from (integral) type of X to type address. If
+      --  the To_Address is a static expression, the transformed expression
+      --  also needs to be static, because we do some legality checks (e.g.
+      --  for Thread_Local_Storage) after this transformation.
 
       when Attribute_Ref
          | Attribute_To_Address
       =>
-         Rewrite (N,
-           Unchecked_Convert_To (RTE (RE_Address),
-             Relocate_Node (First (Exprs))));
-         Analyze_And_Resolve (N, RTE (RE_Address));
+         To_Address : declare
+            Is_Static : constant Boolean := Is_Static_Expression (N);
+
+         begin
+            Rewrite (N,
+              Unchecked_Convert_To (RTE (RE_Address),
+                Relocate_Node (First (Exprs))));
+            Set_Is_Static_Expression (N, Is_Static);
+
+            Analyze_And_Resolve (N, RTE (RE_Address));
+         end To_Address;
 
       ------------
       -- To_Any --

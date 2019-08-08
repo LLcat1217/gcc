@@ -1,6 +1,6 @@
 ## Makefile for the include subdirectory of the GNU C++ Standard library.
 ##
-## Copyright (C) 2001-2018 Free Software Foundation, Inc.
+## Copyright (C) 2001-2019 Free Software Foundation, Inc.
 ##
 ## This file is part of the libstdc++ version 3 distribution.
 ## Process this file with automake to produce Makefile.in.
@@ -38,6 +38,7 @@ std_headers = \
 	${std_srcdir}/complex \
 	${std_srcdir}/condition_variable \
 	${std_srcdir}/deque \
+	${std_srcdir}/execution \
 	${std_srcdir}/filesystem \
 	${std_srcdir}/forward_list \
 	${std_srcdir}/fstream \
@@ -56,6 +57,7 @@ std_headers = \
 	${std_srcdir}/memory \
 	${std_srcdir}/memory_resource \
 	${std_srcdir}/mutex \
+	${std_srcdir}/numbers \
 	${std_srcdir}/numeric \
 	${std_srcdir}/optional \
 	${std_srcdir}/ostream \
@@ -101,11 +103,13 @@ bits_headers = \
 	${bits_srcdir}/boost_concept_check.h \
 	${bits_srcdir}/c++0x_warning.h \
 	${bits_srcdir}/char_traits.h \
+	${bits_srcdir}/charconv.h \
 	${bits_srcdir}/codecvt.h \
 	${bits_srcdir}/concept_check.h \
 	${bits_srcdir}/cpp_type_traits.h \
 	${bits_srcdir}/deque.tcc \
 	${bits_srcdir}/enable_special_members.h \
+	${bits_srcdir}/erase_if.h \
 	${bits_srcdir}/forward_list.h \
 	${bits_srcdir}/forward_list.tcc \
 	${bits_srcdir}/fs_dir.h \
@@ -223,6 +227,33 @@ bits_sup_headers = \
 	${bits_sup_srcdir}/exception_ptr.h \
 	${bits_sup_srcdir}/hash_bytes.h \
 	${bits_sup_srcdir}/nested_exception.h
+
+# C++17 Parallel Algorithm Includes.
+pstl_srcdir = ${glibcxx_srcdir}/include/pstl
+pstl_builddir = ./pstl
+pstl_headers = \
+	${pstl_srcdir}/algorithm_fwd.h \
+	${pstl_srcdir}/algorithm_impl.h \
+	${pstl_srcdir}/execution_defs.h \
+	${pstl_srcdir}/execution_impl.h \
+	${pstl_srcdir}/glue_algorithm_defs.h \
+	${pstl_srcdir}/glue_algorithm_impl.h \
+	${pstl_srcdir}/glue_execution_defs.h \
+	${pstl_srcdir}/glue_memory_defs.h \
+	${pstl_srcdir}/glue_memory_impl.h \
+	${pstl_srcdir}/glue_numeric_defs.h \
+	${pstl_srcdir}/glue_numeric_impl.h \
+	${pstl_srcdir}/memory_impl.h \
+	${pstl_srcdir}/numeric_fwd.h \
+	${pstl_srcdir}/numeric_impl.h \
+	${pstl_srcdir}/parallel_backend.h \
+	${pstl_srcdir}/parallel_backend_tbb.h \
+	${pstl_srcdir}/parallel_backend_serial.h \
+	${pstl_srcdir}/parallel_backend_utils.h \
+	${pstl_srcdir}/parallel_impl.h \
+	${pstl_srcdir}/pstl_config.h \
+	${pstl_srcdir}/unseq_backend_simd.h \
+	${pstl_srcdir}/utils.h
 
 backward_srcdir = ${glibcxx_srcdir}/include/backward
 backward_builddir = ./backward
@@ -535,7 +566,6 @@ ext_headers = \
 	${ext_srcdir}/aligned_buffer.h \
 	${ext_srcdir}/alloc_traits.h \
 	${ext_srcdir}/atomicity.h \
-	${ext_srcdir}/array_allocator.h \
 	${ext_srcdir}/bitmap_allocator.h \
 	${ext_srcdir}/cast.h \
 	${ext_srcdir}/cmath \
@@ -671,15 +701,21 @@ experimental_headers = \
 	${experimental_srcdir}/algorithm \
 	${experimental_srcdir}/any \
 	${experimental_srcdir}/array \
+	${experimental_srcdir}/buffer \
 	${experimental_srcdir}/chrono \
 	${experimental_srcdir}/deque \
+	${experimental_srcdir}/executor \
 	${experimental_srcdir}/forward_list \
 	${experimental_srcdir}/functional \
+	${experimental_srcdir}/internet \
+	${experimental_srcdir}/io_context \
 	${experimental_srcdir}/iterator \
 	${experimental_srcdir}/list \
 	${experimental_srcdir}/map \
 	${experimental_srcdir}/memory \
 	${experimental_srcdir}/memory_resource \
+	${experimental_srcdir}/net \
+	${experimental_srcdir}/netfwd \
 	${experimental_srcdir}/numeric \
 	${experimental_srcdir}/optional \
 	${experimental_srcdir}/propagate_const \
@@ -687,10 +723,12 @@ experimental_headers = \
 	${experimental_srcdir}/ratio \
 	${experimental_srcdir}/regex \
 	${experimental_srcdir}/set \
+	${experimental_srcdir}/socket \
 	${experimental_srcdir}/source_location \
 	${experimental_srcdir}/string \
 	${experimental_srcdir}/string_view \
 	${experimental_srcdir}/system_error \
+	${experimental_srcdir}/timer \
 	${experimental_srcdir}/tuple \
 	${experimental_srcdir}/type_traits \
 	${experimental_srcdir}/unordered_map \
@@ -702,8 +740,8 @@ experimental_headers = \
 experimental_bits_srcdir = ${glibcxx_srcdir}/include/experimental/bits
 experimental_bits_builddir = ./experimental/bits
 experimental_bits_headers = \
-	${experimental_bits_srcdir}/erase_if.h \
 	${experimental_bits_srcdir}/lfts_config.h \
+	${experimental_bits_srcdir}/net.h \
 	${experimental_bits_srcdir}/shared_ptr.h \
 	${experimental_bits_srcdir}/string_view.tcc \
 	${experimental_bits_filesystem_headers}
@@ -884,45 +922,6 @@ parallel_headers = \
 	${parallel_srcdir}/unique_copy.h \
 	${parallel_srcdir}/workstealing.h
 
-# Profile mode headers
-profile_srcdir = ${glibcxx_srcdir}/include/profile
-profile_builddir = ./profile
-profile_headers = \
-	${profile_srcdir}/array \
-	${profile_srcdir}/base.h \
-	${profile_srcdir}/unordered_base.h \
-	${profile_srcdir}/unordered_map \
-	${profile_srcdir}/unordered_set \
-	${profile_srcdir}/vector \
-	${profile_srcdir}/bitset \
-	${profile_srcdir}/deque \
-	${profile_srcdir}/forward_list \
-	${profile_srcdir}/list \
-	${profile_srcdir}/map \
-	${profile_srcdir}/map.h \
-	${profile_srcdir}/multimap.h \
-	${profile_srcdir}/multiset.h \
-	${profile_srcdir}/ordered_base.h \
-	${profile_srcdir}/set \
-	${profile_srcdir}/set.h \
-	${profile_srcdir}/iterator_tracker.h
-profile_impl_srcdir = ${glibcxx_srcdir}/include/profile/impl
-profile_impl_builddir = ./profile/impl
-profile_impl_headers = \
-	${profile_impl_srcdir}/profiler.h \
-	${profile_impl_srcdir}/profiler_algos.h \
-	${profile_impl_srcdir}/profiler_container_size.h \
-	${profile_impl_srcdir}/profiler_hash_func.h \
-	${profile_impl_srcdir}/profiler_hashtable_size.h \
-	${profile_impl_srcdir}/profiler_map_to_unordered_map.h \
-	${profile_impl_srcdir}/profiler_node.h \
-	${profile_impl_srcdir}/profiler_state.h \
-	${profile_impl_srcdir}/profiler_trace.h \
-	${profile_impl_srcdir}/profiler_vector_size.h \
-	${profile_impl_srcdir}/profiler_vector_to_list.h \
-	${profile_impl_srcdir}/profiler_list_to_vector.h \
-	${profile_impl_srcdir}/profiler_list_to_slist.h
-
 # Some "C" header schemes require the "C" compatibility headers.
 # For --enable-cheaders=c_std
 if GLIBCXX_C_HEADERS_COMPATIBILITY
@@ -1005,10 +1004,10 @@ endif
 # List of all timestamp files.  By keeping only one copy of this list, both
 # CLEANFILES and all-local are kept up-to-date.
 allstamped = \
-	stamp-std stamp-bits stamp-bits-sup stamp-c_base stamp-c_compatibility \
+	stamp-std stamp-bits stamp-bits-sup stamp-pstl stamp-c_base stamp-c_compatibility \
 	stamp-backward stamp-ext stamp-pb stamp-tr1 stamp-tr2 stamp-decimal \
 	stamp-experimental stamp-experimental-bits stamp-debug stamp-parallel \
-	stamp-profile stamp-profile-impl stamp-host
+	stamp-host
 
 # List of all files that are created by explicit building, editing, or
 # catenation.
@@ -1037,6 +1036,11 @@ stamp-bits: ${bits_headers}
 stamp-bits-sup: stamp-bits ${bits_sup_headers}
 	@-cd ${bits_builddir} && $(LN_S) ${bits_sup_headers} . 2>/dev/null
 	@$(STAMP) stamp-bits-sup
+
+stamp-pstl: ${pstl_headers}
+	@-mkdir -p ${pstl_builddir}
+	@-cd ${pstl_builddir} && $(LN_S) $? . 2>/dev/null
+	@$(STAMP) stamp-pstl
 
 stamp-c_base: ${c_base_headers}
 	@-mkdir -p ${c_base_builddir}
@@ -1150,16 +1154,6 @@ stamp-parallel: ${parallel_headers}
 	@-mkdir -p ${parallel_builddir}
 	@-cd ${parallel_builddir} && $(LN_S) $? . 2>/dev/null
 	@$(STAMP) stamp-parallel
-
-stamp-profile: ${profile_headers}
-	@-mkdir -p ${profile_builddir}
-	@-cd ${profile_builddir} && $(LN_S) $? . 2>/dev/null
-	@$(STAMP) stamp-profile
-
-stamp-profile-impl: ${profile_impl_headers}
-	@-mkdir -p ${profile_impl_builddir}
-	@-cd ${profile_impl_builddir} && $(LN_S) $? . 2>/dev/null
-	@$(STAMP) stamp-profile-impl
 
 stamp-${host_alias}:
 	@-mkdir -p ${host_builddir}
@@ -1359,10 +1353,10 @@ install-data-local: install-freestanding-headers
 endif
 
 # This is a subset of the full install-headers rule.  We only need <ciso646>,
-# <cstddef>, <cfloat>, <limits>, <climits>, <cstdint>, <cstdlib>, <new>,
-# <typeinfo>, <exception>, <initializer_list>, <cstdalign>, <cstdarg>,
-# <cstdbool>, <type_traits>, <atomic>, and any files which they include (and
-# which we provide).
+# <cstddef>, <cfloat>, <limits>, <climits>, <version>, <cstdint>, <cstdlib>,
+# <new>, <typeinfo>, <exception>, <initializer_list>, <cstdalign>, <cstdarg>,
+# <cstdbool>, <type_traits>, <bit>, <atomic>, and any files which they include
+# (and which we provide).
 # <new>, <typeinfo>, <exception>, and <initializer_list> are installed by
 # libsupc++, so only the others and the sub-includes are copied here.
 install-freestanding-headers:
@@ -1375,7 +1369,7 @@ install-freestanding-headers:
 	  ${glibcxx_srcdir}/$(CPU_DEFINES_SRCDIR)/cpu_defines.h; do \
 	  $(INSTALL_DATA) $${file} $(DESTDIR)${host_installdir}; done
 	$(mkinstalldirs) $(DESTDIR)${gxx_include_dir}/${std_builddir}
-	for file in limits type_traits atomic; do \
+	for file in limits type_traits atomic bit version; do \
 	  $(INSTALL_DATA) ${std_builddir}/$${file} $(DESTDIR)${gxx_include_dir}/${std_builddir}; done
 	$(mkinstalldirs) $(DESTDIR)${gxx_include_dir}/${c_base_builddir}
 	for file in ciso646 cstddef cfloat climits cstdint cstdlib \
@@ -1458,12 +1452,6 @@ install-headers:
 	$(mkinstalldirs) $(DESTDIR)${gxx_include_dir}/${parallel_builddir}
 	for file in ${parallel_headers}; do \
 	  $(INSTALL_DATA) $${file} $(DESTDIR)${gxx_include_dir}/${parallel_builddir}; done
-	$(mkinstalldirs) $(DESTDIR)${gxx_include_dir}/${profile_builddir}
-	for file in ${profile_headers}; do \
-	  $(INSTALL_DATA) $${file} $(DESTDIR)${gxx_include_dir}/${profile_builddir}; done
-	$(mkinstalldirs) $(DESTDIR)${gxx_include_dir}/${profile_impl_builddir}
-	for file in ${profile_impl_headers}; do \
-	  $(INSTALL_DATA) $${file} $(DESTDIR)${gxx_include_dir}/${profile_impl_builddir}; done
 	$(mkinstalldirs) $(DESTDIR)${host_installdir}
 	for file in ${host_headers} ${bits_host_headers} ${host_headers_extra} \
 	 ${thread_host_headers}; do \
@@ -1471,7 +1459,9 @@ install-headers:
 	$(mkinstalldirs) $(DESTDIR)${host_installdir}/../ext
 	for file in ${ext_host_headers}; do \
 	  $(INSTALL_DATA) $${file} $(DESTDIR)${host_installdir}/../ext; done
-
+	$(mkinstalldirs) $(DESTDIR)${gxx_include_dir}/${pstl_builddir}
+	for file in ${pstl_headers}; do \
+	  $(INSTALL_DATA) $${file} $(DESTDIR)${gxx_include_dir}/${pstl_builddir}; done
 # By adding these files here, automake will remove them for 'make clean'
 CLEANFILES = ${pch_output} ${pch_output_anchors} stamp-host
 

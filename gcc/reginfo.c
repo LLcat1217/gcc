@@ -1,5 +1,5 @@
 /* Compute different info about registers.
-   Copyright (C) 1987-2018 Free Software Foundation, Inc.
+   Copyright (C) 1987-2019 Free Software Foundation, Inc.
 
 This file is part of GCC.
 
@@ -50,8 +50,9 @@ int max_regno;
 
 /* Used to cache the results of simplifiable_subregs.  SHAPE is the input
    parameter and SIMPLIFIABLE_REGS is the result.  */
-struct simplifiable_subreg
+class simplifiable_subreg
 {
+public:
   simplifiable_subreg (const subreg_shape &);
 
   subreg_shape shape;
@@ -639,7 +640,7 @@ choose_hard_reg_mode (unsigned int regno ATTRIBUTE_UNUSED,
     if (hard_regno_nregs (regno, mode) == nregs
 	&& targetm.hard_regno_mode_ok (regno, mode)
 	&& (!call_saved
-	    || !targetm.hard_regno_call_part_clobbered (regno, mode))
+	    || !targetm.hard_regno_call_part_clobbered (NULL, regno, mode))
 	&& maybe_gt (GET_MODE_SIZE (mode), GET_MODE_SIZE (found_mode)))
       found_mode = mode;
 
@@ -647,7 +648,7 @@ choose_hard_reg_mode (unsigned int regno ATTRIBUTE_UNUSED,
     if (hard_regno_nregs (regno, mode) == nregs
 	&& targetm.hard_regno_mode_ok (regno, mode)
 	&& (!call_saved
-	    || !targetm.hard_regno_call_part_clobbered (regno, mode))
+	    || !targetm.hard_regno_call_part_clobbered (NULL, regno, mode))
 	&& maybe_gt (GET_MODE_SIZE (mode), GET_MODE_SIZE (found_mode)))
       found_mode = mode;
 
@@ -655,7 +656,7 @@ choose_hard_reg_mode (unsigned int regno ATTRIBUTE_UNUSED,
     if (hard_regno_nregs (regno, mode) == nregs
 	&& targetm.hard_regno_mode_ok (regno, mode)
 	&& (!call_saved
-	    || !targetm.hard_regno_call_part_clobbered (regno, mode))
+	    || !targetm.hard_regno_call_part_clobbered (NULL, regno, mode))
 	&& maybe_gt (GET_MODE_SIZE (mode), GET_MODE_SIZE (found_mode)))
       found_mode = mode;
 
@@ -663,7 +664,7 @@ choose_hard_reg_mode (unsigned int regno ATTRIBUTE_UNUSED,
     if (hard_regno_nregs (regno, mode) == nregs
 	&& targetm.hard_regno_mode_ok (regno, mode)
 	&& (!call_saved
-	    || !targetm.hard_regno_call_part_clobbered (regno, mode))
+	    || !targetm.hard_regno_call_part_clobbered (NULL, regno, mode))
 	&& maybe_gt (GET_MODE_SIZE (mode), GET_MODE_SIZE (found_mode)))
       found_mode = mode;
 
@@ -677,7 +678,7 @@ choose_hard_reg_mode (unsigned int regno ATTRIBUTE_UNUSED,
       if (hard_regno_nregs (regno, mode) == nregs
 	  && targetm.hard_regno_mode_ok (regno, mode)
 	  && (!call_saved
-	      || !targetm.hard_regno_call_part_clobbered (regno, mode)))
+	      || !targetm.hard_regno_call_part_clobbered (NULL, regno, mode)))
 	return mode;
     }
 
@@ -717,11 +718,11 @@ fix_register (const char *name, int fixed, int call_used)
 		  switch (call_used)
 		    {
 		    case 0:
-		      error ("can%'t use %qs as a call-saved register", name);
+		      error ("cannot use %qs as a call-saved register", name);
 		      break;
 
 		    case 1:
-		      error ("can%'t use %qs as a call-used register", name);
+		      error ("cannot use %qs as a call-used register", name);
 		      break;
 
 		    default:
@@ -733,7 +734,7 @@ fix_register (const char *name, int fixed, int call_used)
 		  switch (call_used)
 		    {
 		    case 1:
-		      error ("can%'t use %qs as a fixed register", name);
+		      error ("cannot use %qs as a fixed register", name);
 		      break;
 
 		    case 0:
@@ -782,6 +783,7 @@ globalize_reg (tree decl, int i)
 
   if (global_regs[i])
     {
+      auto_diagnostic_group d;
       warning_at (loc, 0, 
 		  "register of %qD used for multiple global register variables",
 		  decl);
@@ -1098,6 +1100,10 @@ reg_scan_mark_refs (rtx x, rtx_insn *insn)
     case CLOBBER:
       if (MEM_P (XEXP (x, 0)))
 	reg_scan_mark_refs (XEXP (XEXP (x, 0), 0), insn);
+      break;
+
+    case CLOBBER_HIGH:
+      gcc_assert (!(MEM_P (XEXP (x, 0))));
       break;
 
     case SET:

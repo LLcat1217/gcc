@@ -1,5 +1,5 @@
 /* Header for code translation functions
-   Copyright (C) 2002-2018 Free Software Foundation, Inc.
+   Copyright (C) 2002-2019 Free Software Foundation, Inc.
    Contributed by Paul Brook
 
 This file is part of GCC.
@@ -90,6 +90,9 @@ typedef struct gfc_se
      non-copying procedure argument passing optimizations, when some function
      args alias.  */
   unsigned force_tmp:1;
+
+  /* If set, will pass subref descriptors without a temporary.  */
+  unsigned force_no_tmp:1;
 
   /* Unconditionally calculate offset for array segments and constant
      arrays in gfc_conv_expr_descriptor.  */
@@ -412,7 +415,7 @@ tree gfc_class_data_get (tree);
 tree gfc_class_vptr_get (tree);
 tree gfc_class_len_get (tree);
 tree gfc_class_len_or_zero_get (tree);
-gfc_expr * gfc_find_and_cut_at_last_class_ref (gfc_expr *);
+gfc_expr * gfc_find_and_cut_at_last_class_ref (gfc_expr *, bool is_mold = false);
 /* Get an accessor to the class' vtab's * field, when a class handle is
    available.  */
 tree gfc_class_vtab_hash_get (tree);
@@ -485,7 +488,8 @@ tree gfc_build_compare_string (tree, tree, tree, tree, int, enum tree_code);
 void gfc_conv_expr (gfc_se * se, gfc_expr * expr);
 void gfc_conv_expr_val (gfc_se * se, gfc_expr * expr);
 void gfc_conv_expr_lhs (gfc_se * se, gfc_expr * expr);
-void gfc_conv_expr_reference (gfc_se * se, gfc_expr *);
+void gfc_conv_expr_reference (gfc_se * se, gfc_expr * expr,
+			      bool add_clobber = false);
 void gfc_conv_expr_type (gfc_se * se, gfc_expr *, tree);
 
 
@@ -528,7 +532,13 @@ int gfc_is_intrinsic_libcall (gfc_expr *);
 int gfc_conv_procedure_call (gfc_se *, gfc_symbol *, gfc_actual_arglist *,
 			     gfc_expr *, vec<tree, va_gc> *);
 
-void gfc_conv_subref_array_arg (gfc_se *, gfc_expr *, int, sym_intent, bool);
+void gfc_conv_subref_array_arg (gfc_se *, gfc_expr *, int, sym_intent, bool,
+				const gfc_symbol *fsym = NULL,
+				const char *proc_name = NULL,
+				gfc_symbol *sym = NULL,
+				bool check_contiguous = false);
+
+void gfc_conv_is_contiguous_expr (gfc_se *, gfc_expr *);
 
 /* Generate code for a scalar assignment.  */
 tree gfc_trans_scalar_assign (gfc_se *, gfc_se *, gfc_typespec, bool, bool,
@@ -579,7 +589,8 @@ void gfc_merge_block_scope (stmtblock_t * block);
 tree gfc_get_label_decl (gfc_st_label *);
 
 /* Return the decl for an external function.  */
-tree gfc_get_extern_function_decl (gfc_symbol *);
+tree gfc_get_extern_function_decl (gfc_symbol *,
+				   gfc_actual_arglist *args = NULL);
 
 /* Return the decl for a function.  */
 tree gfc_get_function_decl (gfc_symbol *);
@@ -800,6 +811,8 @@ extern GTY(()) tree gfor_fndecl_ctime;
 extern GTY(()) tree gfor_fndecl_fdate;
 extern GTY(()) tree gfor_fndecl_in_pack;
 extern GTY(()) tree gfor_fndecl_in_unpack;
+extern GTY(()) tree gfor_fndecl_cfi_to_gfc;
+extern GTY(()) tree gfor_fndecl_gfc_to_cfi;
 extern GTY(()) tree gfor_fndecl_associated;
 extern GTY(()) tree gfor_fndecl_system_clock4;
 extern GTY(()) tree gfor_fndecl_system_clock8;
@@ -906,6 +919,7 @@ extern GTY(()) tree gfor_fndecl_size1;
 extern GTY(()) tree gfor_fndecl_iargc;
 extern GTY(()) tree gfor_fndecl_kill;
 extern GTY(()) tree gfor_fndecl_kill_sub;
+extern GTY(()) tree gfor_fndecl_is_contiguous0;
 
 /* Implemented in Fortran.  */
 extern GTY(()) tree gfor_fndecl_sc_kind;

@@ -1,5 +1,5 @@
 /* Subroutines used for code generation on TI MSP430 processors.
-   Copyright (C) 2012-2018 Free Software Foundation, Inc.
+   Copyright (C) 2012-2019 Free Software Foundation, Inc.
    Contributed by Red Hat.
 
    This file is part of GCC.
@@ -797,26 +797,31 @@ msp430_option_override (void)
 	    if (msp430_warn_mcu)
 	      {
 		if (target_cpu&& msp430x != xisa)
-		  warning (0, "MCU '%s' supports %s ISA but -mcpu option is set to %s",
+		  warning (0, "MCU %qs supports %s ISA but %<-mcpu%> option "
+			   "is set to %s",
 			   target_mcu, xisa ? "430X" : "430", msp430x ? "430X" : "430");
 
 		if (msp430_mcu_data[i].hwmpy == 0
 		    && msp430_hwmult_type != MSP430_HWMULT_AUTO
 		    && msp430_hwmult_type != MSP430_HWMULT_NONE)
-		  warning (0, "MCU '%s' does not have hardware multiply support, but -mhwmult is set to %s",
+		  warning (0, "MCU %qs does not have hardware multiply "
+			   "support, but %<-mhwmult%> is set to %s",
 			   target_mcu,
 			   msp430_hwmult_type == MSP430_HWMULT_SMALL ? "16-bit"
 			   : msp430_hwmult_type == MSP430_HWMULT_LARGE ? "32-bit" : "f5series");
 		else if (msp430_hwmult_type == MSP430_HWMULT_SMALL
 		    && msp430_mcu_data[i].hwmpy != 1
 		    && msp430_mcu_data[i].hwmpy != 2 )
-		  warning (0, "MCU '%s' supports %s hardware multiply, but -mhwmult is set to 16-bit",
+		  warning (0, "MCU %qs supports %s hardware multiply, "
+			   "but %<-mhwmult%> is set to 16-bit",
 			   target_mcu, hwmult_name (msp430_mcu_data[i].hwmpy));
 		else if (msp430_hwmult_type == MSP430_HWMULT_LARGE && msp430_mcu_data[i].hwmpy != 4)
-		  warning (0, "MCU '%s' supports %s hardware multiply, but -mhwmult is set to 32-bit",
+		  warning (0, "MCU %qs supports %s hardware multiply, "
+			   "but %<-mhwmult%> is set to 32-bit",
 			   target_mcu, hwmult_name (msp430_mcu_data[i].hwmpy));
 		else if (msp430_hwmult_type == MSP430_HWMULT_F5SERIES && msp430_mcu_data[i].hwmpy != 8)
-		  warning (0, "MCU '%s' supports %s hardware multiply, but -mhwmult is set to f5series",
+		  warning (0, "MCU %qs supports %s hardware multiply, "
+			   "but %<-mhwmult%> is set to f5series",
 			   target_mcu, hwmult_name (msp430_mcu_data[i].hwmpy));
 	      }
 
@@ -832,15 +837,15 @@ msp430_option_override (void)
 		{
 		  if (target_cpu == NULL)
 		    warning (0,
-			     "Unrecognized MCU name '%s', assuming that it is "
+			     "Unrecognized MCU name %qs, assuming that it is "
 			     "just a MSP430 with no hardware multiply.\n"
-			     "Use the -mcpu and -mhwmult options to set "
-			     "these explicitly.",
+			     "Use the %<-mcpu%> and %<-mhwmult%> options to "
+			     "set these explicitly.",
 			     target_mcu);
 		  else
 		    warning (0,
-			     "Unrecognized MCU name '%s', assuming that it "
-			     "has no hardware multiply.\nUse the -mhwmult "
+			     "Unrecognized MCU name %qs, assuming that it "
+			     "has no hardware multiply.\nUse the %<-mhwmult%> "
 			     "option to set this explicitly.",
 			     target_mcu);
 		}
@@ -851,15 +856,15 @@ msp430_option_override (void)
 	    {
 	      if (msp430_warn_mcu)
 		warning (0,
-			 "Unrecognized MCU name '%s', assuming that it just "
-			 "supports the MSP430 ISA.\nUse the -mcpu option to "
-			 "set the ISA explicitly.",
+			 "Unrecognized MCU name %qs, assuming that it just "
+			 "supports the MSP430 ISA.\nUse the %<-mcpu%> option "
+			 "to set the ISA explicitly.",
 			 target_mcu);
 
 	      msp430x = false;
 	    }
 	  else if (msp430_warn_mcu)
-	    warning (0, "Unrecognized MCU name '%s'.", target_mcu);
+	    warning (0, "Unrecognized MCU name %qs.", target_mcu);
 	}
     }
 
@@ -868,12 +873,28 @@ msp430_option_override (void)
     msp430x = true;
 
   if (TARGET_LARGE && !msp430x)
-    error ("-mlarge requires a 430X-compatible -mmcu=");
+    error ("%<-mlarge%> requires a 430X-compatible %<-mmcu=%>");
 
-  if (msp430_code_region == MSP430_REGION_UPPER && ! msp430x)
-    error ("-mcode-region=upper requires 430X-compatible cpu");
-  if (msp430_data_region == MSP430_REGION_UPPER && ! msp430x)
-    error ("-mdata-region=upper requires 430X-compatible cpu");
+  if (!TARGET_LARGE && msp430_code_region == MSP430_REGION_EITHER)
+    error ("%<-mcode-region=either%> requires the large memory model "
+	   "(%<-mlarge%>)");
+  else if (!TARGET_LARGE && msp430_code_region == MSP430_REGION_UPPER)
+    error ("%<-mcode-region=upper%> requires the large memory model "
+	   "(%<-mlarge%>)");
+  else if (!TARGET_LARGE && msp430_code_region == MSP430_REGION_LOWER)
+    error ("%<-mcode-region=lower%> requires the large memory model "
+	   "(%<-mlarge%>)");
+
+  if (!TARGET_LARGE && msp430_data_region == MSP430_REGION_EITHER)
+    error ("%<-mdata-region=either%> requires the large memory model "
+	   "(%<-mlarge%>)");
+  else if (!TARGET_LARGE && msp430_data_region == MSP430_REGION_UPPER)
+    error ("%<-mdata-region=upper%> requires the large memory model "
+	   "(%<-mlarge%>)");
+  else if (!TARGET_LARGE && msp430_data_region == MSP430_REGION_LOWER)
+    error ("%<-mdata-region=lower%> requires the large memory model "
+	   "(%<-mlarge%>)");
+
 
   if (flag_exceptions || flag_non_call_exceptions
       || flag_unwind_tables || flag_asynchronous_unwind_tables)
@@ -1750,11 +1771,19 @@ msp430_preserve_reg_p (int regno)
   if (fixed_regs [regno])
     return false;
 
-  /* Interrupt handlers save all registers they use, even
-     ones which are call saved.  If they call other functions
-     then *every* register is saved.  */
-  if (msp430_is_interrupt_func ())
-    return ! crtl->is_leaf || df_regs_ever_live_p (regno);
+  /* For interrupt functions we must save and restore the used regs that
+     would normally be caller-saved (R11->R15).  */
+  if (msp430_is_interrupt_func () && regno >= 11 && regno <= 15)
+    {
+      if (crtl->is_leaf && df_regs_ever_live_p (regno))
+	/* If the interrupt func is a leaf then we only need to restore the
+	   caller-saved regs that are used.  */
+	return true;
+      else if (!crtl->is_leaf)
+	/* If the interrupt function is not a leaf we must save all
+	   caller-saved regs in case the callee modifies them.  */
+	return true;
+    }
 
   if (!call_used_regs [regno]
       && df_regs_ever_live_p (regno))
@@ -1946,6 +1975,13 @@ msp430_attr (tree * node,
 	  TREE_USED (* node) = 1;
 	  DECL_PRESERVE_P (* node) = 1;
 	}
+      if (is_critical_func (* node))
+	{
+	  warning (OPT_Wattributes,
+		   "critical attribute has no effect on interrupt functions");
+	  DECL_ATTRIBUTES (*node) = remove_attribute (ATTR_CRIT,
+						      DECL_ATTRIBUTES (* node));
+	}
     }
   else if (TREE_NAME_EQ (name, ATTR_REENT))
     {
@@ -1960,6 +1996,8 @@ msp430_attr (tree * node,
 	message = "naked functions cannot be critical";
       else if (is_reentrant_func (* node))
 	message = "reentrant functions cannot be critical";
+      else if (is_interrupt_func ( *node))
+	message = "critical attribute has no effect on interrupt functions";
     }
   else if (TREE_NAME_EQ (name, ATTR_NAKED))
     {
@@ -2015,6 +2053,17 @@ msp430_section_attr (tree * node,
       else if (has_attr (ATTR_UPPER, * node))
 	message = "already marked with 'upper' attribute";
     }
+
+  /* It does not make sense to use upper/lower/either attributes without
+     -mlarge.
+     Without -mlarge, "lower" is the default and only region, so is redundant.
+     Without -mlarge, "upper" will (and "either" might) place code/data in the
+     upper region, which for data could result in relocation overflows, and for
+     code could result in stack mismanagement and incorrect call/return
+     instructions.  */
+  if (!TARGET_LARGE)
+    message = G_("%qE attribute ignored. large memory model (%<-mlarge%>) "
+		 "is required");
 
   if (message)
     {
@@ -3032,6 +3081,7 @@ msp430_expand_helper (rtx *operands, const char *helper_name, bool const_variant
 {
   rtx c, f;
   char *helper_const = NULL;
+  int arg1 = 12;
   int arg2 = 13;
   int arg1sz = 1;
   machine_mode arg0mode = GET_MODE (operands[0]);
@@ -3065,6 +3115,13 @@ msp430_expand_helper (rtx *operands, const char *helper_name, bool const_variant
       arg2 = 14;
       arg1sz = 2;
     }
+  else if (arg1mode == DImode)
+    {
+      /* Shift value in R8:R11, shift amount in R12.  */
+      arg1 = 8;
+      arg1sz = 4;
+      arg2 = 12;
+    }
 
   if (const_variants
       && CONST_INT_P (operands[2])
@@ -3077,7 +3134,7 @@ msp430_expand_helper (rtx *operands, const char *helper_name, bool const_variant
       snprintf (helper_const, len, "%s_%d", helper_name, (int) INTVAL (operands[2]));
     }
 
-  emit_move_insn (gen_rtx_REG (arg1mode, 12),
+  emit_move_insn (gen_rtx_REG (arg1mode, arg1),
 		  operands[1]);
   if (!helper_const)
     emit_move_insn (gen_rtx_REG (arg2mode, arg2),
@@ -3090,12 +3147,13 @@ msp430_expand_helper (rtx *operands, const char *helper_name, bool const_variant
   RTL_CONST_CALL_P (c) = 1;
 
   f = 0;
-  use_regs (&f, 12, arg1sz);
+  use_regs (&f, arg1, arg1sz);
   if (!helper_const)
     use_regs (&f, arg2, 1);
   add_function_usage_to (c, f);
 
   emit_move_insn (operands[0],
+		  /* Return value will always start in R12.  */
 		  gen_rtx_REG (arg0mode, 12));
 }
 
@@ -3468,6 +3526,11 @@ msp430_print_operand_raw (FILE * file, rtx op)
       break;
     }
 }
+
+#undef  TARGET_ASM_ALIGNED_PSI_OP
+#define TARGET_ASM_ALIGNED_PSI_OP "\t.long\t"
+#undef  TARGET_ASM_UNALIGNED_PSI_OP
+#define TARGET_ASM_UNALIGNED_PSI_OP TARGET_ASM_ALIGNED_PSI_OP
 
 #undef  TARGET_PRINT_OPERAND_ADDRESS
 #define TARGET_PRINT_OPERAND_ADDRESS	msp430_print_operand_addr
@@ -3871,6 +3934,9 @@ msp430_can_change_mode_class (machine_mode from, machine_mode to, reg_class_t)
   return true;
 }
 
+#undef  TARGET_HAVE_SPECULATION_SAFE_VALUE
+#define TARGET_HAVE_SPECULATION_SAFE_VALUE speculation_safe_value_not_needed
+
 struct gcc_target targetm = TARGET_INITIALIZER;
 
 #include "gt-msp430.h"

@@ -1,5 +1,5 @@
 /* Analysis Utilities for Loop Vectorization.
-   Copyright (C) 2006-2018 Free Software Foundation, Inc.
+   Copyright (C) 2006-2019 Free Software Foundation, Inc.
    Contributed by Dorit Nuzman <dorit@il.ibm.com>
 
 This file is part of GCC.
@@ -53,7 +53,7 @@ along with GCC; see the file COPYING3.  If not see
 static bool
 vect_get_range_info (tree var, wide_int *min_value, wide_int *max_value)
 {
-  value_range_type vr_type = get_range_info (var, min_value, max_value);
+  value_range_kind vr_type = get_range_info (var, min_value, max_value);
   wide_int nonzero = get_nonzero_bits (var);
   signop sgn = TYPE_SIGN (TREE_TYPE (var));
   if (intersect_range_with_nonzero_bits (vr_type, min_value, max_value,
@@ -88,10 +88,7 @@ static void
 vect_pattern_detected (const char *name, gimple *stmt)
 {
   if (dump_enabled_p ())
-    {
-      dump_printf_loc (MSG_NOTE, vect_location, "%s: detected: ", name);
-      dump_gimple_stmt (MSG_NOTE, TDF_SLIM, stmt, 0);
-    }
+    dump_printf_loc (MSG_NOTE, vect_location, "%s: detected: %G", name, stmt);
 }
 
 /* Associate pattern statement PATTERN_STMT with ORIG_STMT_INFO and
@@ -289,7 +286,8 @@ type_conversion_p (tree name, stmt_vec_info stmt_vinfo, bool check_sign,
 
 /* Holds information about an input operand after some sign changes
    and type promotions have been peeled away.  */
-struct vect_unpromoted_value {
+class vect_unpromoted_value {
+public:
   vect_unpromoted_value ();
 
   void set_op (tree, vect_def_type, stmt_vec_info = NULL);
@@ -370,6 +368,7 @@ vect_look_through_possible_promotion (vec_info *vinfo, tree op,
   tree res = NULL_TREE;
   tree op_type = TREE_TYPE (op);
   unsigned int orig_precision = TYPE_PRECISION (op_type);
+  unsigned int min_precision = orig_precision;
   stmt_vec_info caster = NULL;
   while (TREE_CODE (op) == SSA_NAME && INTEGRAL_TYPE_P (op_type))
     {
@@ -388,7 +387,7 @@ vect_look_through_possible_promotion (vec_info *vinfo, tree op,
 	 This copes with cases such as the result of an arithmetic
 	 operation being truncated before being stored, and where that
 	 arithmetic operation has been recognized as an over-widened one.  */
-      if (TYPE_PRECISION (op_type) <= orig_precision)
+      if (TYPE_PRECISION (op_type) <= min_precision)
 	{
 	  /* Use OP as the UNPROM described above if we haven't yet
 	     found a promotion, or if using the new input preserves the
@@ -396,7 +395,10 @@ vect_look_through_possible_promotion (vec_info *vinfo, tree op,
 	  if (!res
 	      || TYPE_PRECISION (unprom->type) == orig_precision
 	      || TYPE_SIGN (unprom->type) == TYPE_SIGN (op_type))
-	    unprom->set_op (op, dt, caster);
+	    {
+	      unprom->set_op (op, dt, caster);
+	      min_precision = TYPE_PRECISION (op_type);
+	    }
 	  /* Stop if we've already seen a promotion and if this
 	     conversion does more than change the sign.  */
 	  else if (TYPE_PRECISION (op_type)
@@ -639,11 +641,8 @@ vect_split_statement (stmt_vec_info stmt2_info, tree new_rhs,
       vect_init_pattern_stmt (stmt1, orig_stmt2_info, vectype);
 
       if (dump_enabled_p ())
-	{
-	  dump_printf_loc (MSG_NOTE, vect_location,
-			   "Splitting pattern statement: ");
-	  dump_gimple_stmt (MSG_NOTE, TDF_SLIM, stmt2_info->stmt, 0);
-	}
+	dump_printf_loc (MSG_NOTE, vect_location,
+			 "Splitting pattern statement: %G", stmt2_info->stmt);
 
       /* Since STMT2_INFO is a pattern statement, we can change it
 	 in-situ without worrying about changing the code for the
@@ -652,10 +651,9 @@ vect_split_statement (stmt_vec_info stmt2_info, tree new_rhs,
 
       if (dump_enabled_p ())
 	{
-	  dump_printf_loc (MSG_NOTE, vect_location, "into: ");
-	  dump_gimple_stmt (MSG_NOTE, TDF_SLIM, stmt1, 0);
-	  dump_printf_loc (MSG_NOTE, vect_location, "and: ");
-	  dump_gimple_stmt (MSG_NOTE, TDF_SLIM, stmt2_info->stmt, 0);
+	  dump_printf_loc (MSG_NOTE, vect_location, "into: %G", stmt1);
+	  dump_printf_loc (MSG_NOTE, vect_location, "and: %G",
+			   stmt2_info->stmt);
 	}
 
       gimple_seq *def_seq = &STMT_VINFO_PATTERN_DEF_SEQ (orig_stmt2_info);
@@ -683,11 +681,8 @@ vect_split_statement (stmt_vec_info stmt2_info, tree new_rhs,
 	return false;
 
       if (dump_enabled_p ())
-	{
-	  dump_printf_loc (MSG_NOTE, vect_location,
-			   "Splitting statement: ");
-	  dump_gimple_stmt (MSG_NOTE, TDF_SLIM, stmt2_info->stmt, 0);
-	}
+	dump_printf_loc (MSG_NOTE, vect_location,
+			 "Splitting statement: %G", stmt2_info->stmt);
 
       /* Add STMT1 as a singleton pattern definition sequence.  */
       gimple_seq *def_seq = &STMT_VINFO_PATTERN_DEF_SEQ (stmt2_info);
@@ -702,10 +697,8 @@ vect_split_statement (stmt_vec_info stmt2_info, tree new_rhs,
       if (dump_enabled_p ())
 	{
 	  dump_printf_loc (MSG_NOTE, vect_location,
-			   "into pattern statements: ");
-	  dump_gimple_stmt (MSG_NOTE, TDF_SLIM, stmt1, 0);
-	  dump_printf_loc (MSG_NOTE, vect_location, "and: ");
-	  dump_gimple_stmt (MSG_NOTE, TDF_SLIM, new_stmt2, 0);
+			   "into pattern statements: %G", stmt1);
+	  dump_printf_loc (MSG_NOTE, vect_location, "and: %G", new_stmt2);
 	}
 
       return true;
@@ -728,34 +721,60 @@ vect_convert_input (stmt_vec_info stmt_info, tree type,
   if (TREE_CODE (unprom->op) == INTEGER_CST)
     return wide_int_to_tree (type, wi::to_widest (unprom->op));
 
-  /* See if we can reuse an existing result.  */
+  tree input = unprom->op;
   if (unprom->caster)
     {
       tree lhs = gimple_get_lhs (unprom->caster->stmt);
-      if (types_compatible_p (TREE_TYPE (lhs), type))
-	return lhs;
+      tree lhs_type = TREE_TYPE (lhs);
+
+      /* If the result of the existing cast is the right width, use it
+	 instead of the source of the cast.  */
+      if (TYPE_PRECISION (lhs_type) == TYPE_PRECISION (type))
+	input = lhs;
+      /* If the precision we want is between the source and result
+	 precisions of the existing cast, try splitting the cast into
+	 two and tapping into a mid-way point.  */
+      else if (TYPE_PRECISION (lhs_type) > TYPE_PRECISION (type)
+	       && TYPE_PRECISION (type) > TYPE_PRECISION (unprom->type))
+	{
+	  /* In order to preserve the semantics of the original cast,
+	     give the mid-way point the same signedness as the input value.
+
+	     It would be possible to use a signed type here instead if
+	     TYPE is signed and UNPROM->TYPE is unsigned, but that would
+	     make the sign of the midtype sensitive to the order in
+	     which we process the statements, since the signedness of
+	     TYPE is the signedness required by just one of possibly
+	     many users.  Also, unsigned promotions are usually as cheap
+	     as or cheaper than signed ones, so it's better to keep an
+	     unsigned promotion.  */
+	  tree midtype = build_nonstandard_integer_type
+	    (TYPE_PRECISION (type), TYPE_UNSIGNED (unprom->type));
+	  tree vec_midtype = get_vectype_for_scalar_type (midtype);
+	  if (vec_midtype)
+	    {
+	      input = vect_recog_temp_ssa_var (midtype, NULL);
+	      gassign *new_stmt = gimple_build_assign (input, NOP_EXPR,
+						       unprom->op);
+	      if (!vect_split_statement (unprom->caster, input, new_stmt,
+					 vec_midtype))
+		append_pattern_def_seq (stmt_info, new_stmt, vec_midtype);
+	    }
+	}
+
+      /* See if we can reuse an existing result.  */
+      if (types_compatible_p (type, TREE_TYPE (input)))
+	return input;
     }
 
   /* We need a new conversion statement.  */
   tree new_op = vect_recog_temp_ssa_var (type, NULL);
-  gassign *new_stmt = gimple_build_assign (new_op, NOP_EXPR, unprom->op);
-
-  /* If the operation is the input to a vectorizable cast, try splitting
-     that cast into two, taking the required result as a mid-way point.  */
-  if (unprom->caster)
-    {
-      tree lhs = gimple_get_lhs (unprom->caster->stmt);
-      if (TYPE_PRECISION (TREE_TYPE (lhs)) > TYPE_PRECISION (type)
-	  && TYPE_PRECISION (type) > TYPE_PRECISION (unprom->type)
-	  && (TYPE_UNSIGNED (unprom->type) || !TYPE_UNSIGNED (type))
-	  && vect_split_statement (unprom->caster, new_op, new_stmt, vectype))
-	return new_op;
-    }
+  gassign *new_stmt = gimple_build_assign (new_op, NOP_EXPR, input);
 
   /* If OP is an external value, see if we can insert the new statement
      on an incoming edge.  */
-  if (unprom->dt == vect_external_def)
-    if (edge e = vect_get_external_def_edge (stmt_info->vinfo, unprom->op))
+  if (input == unprom->op && unprom->dt == vect_external_def)
+    if (edge e = vect_get_external_def_edge (stmt_info->vinfo, input))
       {
 	basic_block new_bb = gsi_insert_on_edge_immediate (e, new_stmt);
 	gcc_assert (!new_bb);
@@ -840,7 +859,7 @@ vect_reassociating_reduction_p (stmt_vec_info stmt_info, tree_code code,
 
   /* We don't allow changing the order of the computation in the inner-loop
      when doing outer-loop vectorization.  */
-  struct loop *loop = LOOP_VINFO_LOOP (loop_info);
+  class loop *loop = LOOP_VINFO_LOOP (loop_info);
   if (loop && nested_in_vect_loop_p (loop, stmt_info))
     return false;
 
@@ -1652,44 +1671,52 @@ vect_recog_over_widening_pattern (stmt_vec_info last_stmt_info, tree *type_out)
   bool unsigned_p = (last_stmt_info->operation_sign == UNSIGNED);
   tree new_type = build_nonstandard_integer_type (new_precision, unsigned_p);
 
+  /* If we're truncating an operation, we need to make sure that we
+     don't introduce new undefined overflow.  The codes tested here are
+     a subset of those accepted by vect_truncatable_operation_p.  */
+  tree op_type = new_type;
+  if (TYPE_OVERFLOW_UNDEFINED (new_type)
+      && (code == PLUS_EXPR || code == MINUS_EXPR || code == MULT_EXPR))
+    op_type = build_nonstandard_integer_type (new_precision, true);
+
   /* We specifically don't check here whether the target supports the
      new operation, since it might be something that a later pattern
      wants to rewrite anyway.  If targets have a minimum element size
      for some optabs, we should pattern-match smaller ops to larger ops
      where beneficial.  */
   tree new_vectype = get_vectype_for_scalar_type (new_type);
-  if (!new_vectype)
+  tree op_vectype = get_vectype_for_scalar_type (op_type);
+  if (!new_vectype || !op_vectype)
     return NULL;
 
   if (dump_enabled_p ())
-    {
-      dump_printf_loc (MSG_NOTE, vect_location, "demoting ");
-      dump_generic_expr (MSG_NOTE, TDF_SLIM, type);
-      dump_printf (MSG_NOTE, " to ");
-      dump_generic_expr (MSG_NOTE, TDF_SLIM, new_type);
-      dump_printf (MSG_NOTE, "\n");
-    }
+    dump_printf_loc (MSG_NOTE, vect_location, "demoting %T to %T\n",
+		     type, new_type);
 
-  /* Calculate the rhs operands for an operation on NEW_TYPE.  */
+  /* Calculate the rhs operands for an operation on OP_TYPE.  */
   tree ops[3] = {};
   for (unsigned int i = 1; i < first_op; ++i)
     ops[i - 1] = gimple_op (last_stmt, i);
   vect_convert_inputs (last_stmt_info, nops, &ops[first_op - 1],
-		       new_type, &unprom[0], new_vectype);
+		       op_type, &unprom[0], op_vectype);
 
-  /* Use the operation to produce a result of type NEW_TYPE.  */
-  tree new_var = vect_recog_temp_ssa_var (new_type, NULL);
+  /* Use the operation to produce a result of type OP_TYPE.  */
+  tree new_var = vect_recog_temp_ssa_var (op_type, NULL);
   gimple *pattern_stmt = gimple_build_assign (new_var, code,
 					      ops[0], ops[1], ops[2]);
   gimple_set_location (pattern_stmt, gimple_location (last_stmt));
 
   if (dump_enabled_p ())
-    {
-      dump_printf_loc (MSG_NOTE, vect_location,
-		       "created pattern stmt: ");
-      dump_gimple_stmt (MSG_NOTE, TDF_SLIM, pattern_stmt, 0);
-    }
+    dump_printf_loc (MSG_NOTE, vect_location,
+		     "created pattern stmt: %G", pattern_stmt);
 
+  /* Convert back to the original signedness, if OP_TYPE is different
+     from NEW_TYPE.  */
+  if (op_type != new_type)
+    pattern_stmt = vect_convert_output (last_stmt_info, new_type,
+					pattern_stmt, op_vectype);
+
+  /* Promote the result to the original type.  */
   pattern_stmt = vect_convert_output (last_stmt_info, type,
 				      pattern_stmt, new_vectype);
 
@@ -1735,8 +1762,16 @@ vect_recog_average_pattern (stmt_vec_info last_stmt_info, tree *type_out)
   if (!INTEGRAL_TYPE_P (type) || target_precision >= TYPE_PRECISION (type))
     return NULL;
 
-  /* Get the definition of the shift input.  */
+  /* Look through any change in sign on the shift input.  */
   tree rshift_rhs = gimple_assign_rhs1 (last_stmt);
+  vect_unpromoted_value unprom_plus;
+  rshift_rhs = vect_look_through_possible_promotion (vinfo, rshift_rhs,
+						     &unprom_plus);
+  if (!rshift_rhs
+      || TYPE_PRECISION (TREE_TYPE (rshift_rhs)) != TYPE_PRECISION (type))
+    return NULL;
+
+  /* Get the definition of the shift input.  */
   stmt_vec_info plus_stmt_info = vect_get_internal_def (vinfo, rshift_rhs);
   if (!plus_stmt_info)
     return NULL;
@@ -1831,11 +1866,8 @@ vect_recog_average_pattern (stmt_vec_info last_stmt_info, tree *type_out)
   gimple_set_location (average_stmt, gimple_location (last_stmt));
 
   if (dump_enabled_p ())
-    {
-      dump_printf_loc (MSG_NOTE, vect_location,
-		       "created pattern stmt: ");
-      dump_gimple_stmt (MSG_NOTE, TDF_SLIM, average_stmt, 0);
-    }
+    dump_printf_loc (MSG_NOTE, vect_location,
+		     "created pattern stmt: %G", average_stmt);
 
   return vect_convert_output (last_stmt_info, type, average_stmt, new_vectype);
 }
@@ -3258,7 +3290,7 @@ check_bool_pattern (tree var, vec_info *vinfo, hash_set<gimple *> &stmts)
 
 	  /* If the comparison can throw, then is_gimple_condexpr will be
 	     false and we can't make a COND_EXPR/VEC_COND_EXPR out of it.  */
-	  if (stmt_could_throw_p (def_stmt))
+	  if (stmt_could_throw_p (cfun, def_stmt))
 	    return false;
 
 	  comp_vectype = get_vectype_for_scalar_type (TREE_TYPE (rhs1));
@@ -4399,16 +4431,21 @@ vect_determine_min_output_precision_1 (stmt_vec_info stmt_info, tree lhs)
       stmt_vec_info use_stmt_info = vinfo->lookup_stmt (use_stmt);
       if (!use_stmt_info || !use_stmt_info->min_input_precision)
 	return false;
+      /* The input precision recorded for COND_EXPRs applies only to the
+	 "then" and "else" values.  */
+      gassign *assign = dyn_cast <gassign *> (stmt_info->stmt);
+      if (assign
+	  && gimple_assign_rhs_code (assign) == COND_EXPR
+	  && use->use != gimple_assign_rhs2_ptr (assign)
+	  && use->use != gimple_assign_rhs3_ptr (assign))
+	return false;
       precision = MAX (precision, use_stmt_info->min_input_precision);
     }
 
   if (dump_enabled_p ())
-    {
-      dump_printf_loc (MSG_NOTE, vect_location, "only the low %d bits of ",
-		       precision);
-      dump_generic_expr (MSG_NOTE, TDF_SLIM, lhs);
-      dump_printf (MSG_NOTE, " are significant\n");
-    }
+    dump_printf_loc (MSG_NOTE, vect_location,
+		     "only the low %d bits of %T are significant\n",
+		     precision, lhs);
   stmt_info->min_output_precision = precision;
   return true;
 }
@@ -4516,13 +4553,10 @@ vect_determine_precisions_from_range (stmt_vec_info stmt_info, gassign *stmt)
     return;
 
   if (dump_enabled_p ())
-    {
-      dump_printf_loc (MSG_NOTE, vect_location, "can narrow to %s:%d"
-		       " without loss of precision: ",
-		       sign == SIGNED ? "signed" : "unsigned",
-		       value_precision);
-      dump_gimple_stmt (MSG_NOTE, TDF_SLIM, stmt, 0);
-    }
+    dump_printf_loc (MSG_NOTE, vect_location, "can narrow to %s:%d"
+		     " without loss of precision: %G",
+		     sign == SIGNED ? "signed" : "unsigned",
+		     value_precision, stmt);
 
   vect_set_operation_type (stmt_info, type, value_precision, sign);
   vect_set_min_input_precision (stmt_info, type, value_precision);
@@ -4591,13 +4625,10 @@ vect_determine_precisions_from_users (stmt_vec_info stmt_info, gassign *stmt)
   if (operation_precision < precision)
     {
       if (dump_enabled_p ())
-	{
-	  dump_printf_loc (MSG_NOTE, vect_location, "can narrow to %s:%d"
-			   " without affecting users: ",
-			   TYPE_UNSIGNED (type) ? "unsigned" : "signed",
-			   operation_precision);
-	  dump_gimple_stmt (MSG_NOTE, TDF_SLIM, stmt, 0);
-	}
+	dump_printf_loc (MSG_NOTE, vect_location, "can narrow to %s:%d"
+			 " without affecting users: %G",
+			 TYPE_UNSIGNED (type) ? "unsigned" : "signed",
+			 operation_precision, stmt);
       vect_set_operation_type (stmt_info, type, operation_precision,
 			       TYPE_SIGN (type));
     }
@@ -4633,7 +4664,7 @@ vect_determine_precisions (vec_info *vinfo)
 
   if (loop_vec_info loop_vinfo = dyn_cast <loop_vec_info> (vinfo))
     {
-      struct loop *loop = LOOP_VINFO_LOOP (loop_vinfo);
+      class loop *loop = LOOP_VINFO_LOOP (loop_vinfo);
       basic_block *bbs = LOOP_VINFO_BBS (loop_vinfo);
       unsigned int nbbs = loop->num_nodes;
 
@@ -4719,11 +4750,8 @@ vect_mark_pattern_stmts (stmt_vec_info orig_stmt_info, gimple *pattern_stmt,
 	 sequence.  */
       orig_pattern_stmt = orig_stmt_info->stmt;
       if (dump_enabled_p ())
-	{
-	  dump_printf_loc (MSG_NOTE, vect_location,
-			   "replacing earlier pattern ");
-	  dump_gimple_stmt (MSG_NOTE, TDF_SLIM, orig_pattern_stmt, 0);
-	}
+	dump_printf_loc (MSG_NOTE, vect_location,
+			 "replacing earlier pattern %G", orig_pattern_stmt);
 
       /* To keep the book-keeping simple, just swap the lhs of the
 	 old and new statements, so that the old one has a valid but
@@ -4733,10 +4761,7 @@ vect_mark_pattern_stmts (stmt_vec_info orig_stmt_info, gimple *pattern_stmt,
       gimple_set_lhs (pattern_stmt, old_lhs);
 
       if (dump_enabled_p ())
-	{
-	  dump_printf_loc (MSG_NOTE, vect_location, "with ");
-	  dump_gimple_stmt (MSG_NOTE, TDF_SLIM, pattern_stmt, 0);
-	}
+	dump_printf_loc (MSG_NOTE, vect_location, "with %G", pattern_stmt);
 
       /* Switch to the statement that ORIG replaces.  */
       orig_stmt_info = STMT_VINFO_RELATED_STMT (orig_stmt_info);
@@ -4749,7 +4774,15 @@ vect_mark_pattern_stmts (stmt_vec_info orig_stmt_info, gimple *pattern_stmt,
   if (def_seq)
     for (gimple_stmt_iterator si = gsi_start (def_seq);
 	 !gsi_end_p (si); gsi_next (&si))
-      vect_init_pattern_stmt (gsi_stmt (si), orig_stmt_info, pattern_vectype);
+      {
+	stmt_vec_info pattern_stmt_info
+	  = vect_init_pattern_stmt (gsi_stmt (si),
+				    orig_stmt_info, pattern_vectype);
+	/* Stmts in the def sequence are not vectorizable cycle or
+	   induction defs, instead they should all be vect_internal_def
+	   feeding the main pattern stmt which retains this def type.  */
+	STMT_VINFO_DEF_TYPE (pattern_stmt_info) = vect_internal_def;
+      }
 
   if (orig_pattern_stmt)
     {
@@ -4822,11 +4855,9 @@ vect_pattern_recog_1 (vect_recog_func *recog_func, stmt_vec_info stmt_info)
  
   /* Found a vectorizable pattern.  */
   if (dump_enabled_p ())
-    {
-      dump_printf_loc (MSG_NOTE, vect_location,
-                       "%s pattern recognized: ", recog_func->name);
-      dump_gimple_stmt (MSG_NOTE, TDF_SLIM, pattern_stmt, 0);
-    }
+    dump_printf_loc (MSG_NOTE, vect_location,
+		     "%s pattern recognized: %G",
+		     recog_func->name, pattern_stmt);
 
   /* Mark the stmts that are involved in the pattern. */
   vect_mark_pattern_stmts (stmt_info, pattern_stmt, pattern_vectype);
@@ -4923,7 +4954,7 @@ vect_pattern_recog_1 (vect_recog_func *recog_func, stmt_vec_info stmt_info)
 void
 vect_pattern_recog (vec_info *vinfo)
 {
-  struct loop *loop;
+  class loop *loop;
   basic_block *bbs;
   unsigned int nbbs;
   gimple_stmt_iterator si;

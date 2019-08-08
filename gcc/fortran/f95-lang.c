@@ -1,5 +1,5 @@
 /* gfortran backend interface
-   Copyright (C) 2000-2018 Free Software Foundation, Inc.
+   Copyright (C) 2000-2019 Free Software Foundation, Inc.
    Contributed by Paul Brook.
 
 This file is part of GCC.
@@ -91,7 +91,7 @@ static const struct attribute_spec gfc_attribute_table[] =
 {
   /* { name, min_len, max_len, decl_req, type_req, fn_type_req,
        affects_type_identity, handler, exclude } */
-  { "omp declare target", 0, 0, true,  false, false, false,
+  { "omp declare target", 0, -1, true,  false, false, false,
     gfc_handle_omp_declare_target_attribute, NULL },
   { "omp declare target link", 0, 0, true,  false, false, false,
     gfc_handle_omp_declare_target_attribute, NULL },
@@ -248,7 +248,7 @@ gfc_init (void)
   gfc_init_1 ();
 
   if (!gfc_new_file ())
-    fatal_error (input_location, "can't open input file: %s", gfc_source_file);
+    fatal_error (input_location, "cannot open input file: %s", gfc_source_file);
 
   if (flag_preprocess_only)
     return false;

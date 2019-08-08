@@ -1,5 +1,5 @@
 /* JSON trees
-   Copyright (C) 2017-2018 Free Software Foundation, Inc.
+   Copyright (C) 2017-2019 Free Software Foundation, Inc.
    Contributed by David Malcolm <dmalcolm@redhat.com>.
 
 This file is part of GCC.
@@ -90,6 +90,7 @@ class object : public value
   void print (pretty_printer *pp) const FINAL OVERRIDE;
 
   void set (const char *key, value *v);
+  value *get (const char *key) const;
 
  private:
   typedef hash_map <char *, value *,
@@ -153,6 +154,9 @@ class literal : public value
 {
  public:
   literal (enum kind kind) : m_kind (kind) {}
+
+  /* Construct literal for a boolean value.  */
+  literal (bool value): m_kind (value ? JSON_TRUE : JSON_FALSE) {}
 
   enum kind get_kind () const FINAL OVERRIDE { return m_kind; }
   void print (pretty_printer *pp) const FINAL OVERRIDE;

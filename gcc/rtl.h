@@ -1,5 +1,5 @@
 /* Register Transfer Language (RTL) definitions for GCC
-   Copyright (C) 1987-2018 Free Software Foundation, Inc.
+   Copyright (C) 1987-2019 Free Software Foundation, Inc.
 
 This file is part of GCC.
 
@@ -145,8 +145,9 @@ struct addr_diff_vec_flags
 /* Structure used to describe the attributes of a MEM.  These are hashed
    so MEMs that the same attributes share a data structure.  This means
    they cannot be modified in place.  */
-struct GTY(()) mem_attrs
+class GTY(()) mem_attrs
 {
+public:
   mem_attrs ();
 
   /* The expression that the MEM accesses, or null if not known.
@@ -187,7 +188,8 @@ struct GTY(()) mem_attrs
    object in the low part of a 4-byte register, the OFFSET field
    will be -3 rather than 0.  */
 
-struct GTY((for_user)) reg_attrs {
+class GTY((for_user)) reg_attrs {
+public:
   tree decl;			/* decl corresponding to REG.  */
   poly_int64 offset;		/* Offset from start of DECL.  */
 };
@@ -208,7 +210,7 @@ union rtunion
   tree rt_tree;
   basic_block rt_bb;
   mem_attrs *rt_mem;
-  struct constant_descriptor_rtx *rt_constant;
+  class constant_descriptor_rtx *rt_constant;
   struct dw_cfi_node *rt_cfi;
 };
 
@@ -449,8 +451,9 @@ struct GTY((desc("0"), tag("0"),
 
 /* A node for constructing singly-linked lists of rtx.  */
 
-class GTY(()) rtx_expr_list : public rtx_def
+struct GTY(()) rtx_expr_list : public rtx_def
 {
+private:
   /* No extra fields, but adds invariant: (GET_CODE (X) == EXPR_LIST).  */
 
 public:
@@ -469,8 +472,9 @@ is_a_helper <rtx_expr_list *>::test (rtx rt)
   return rt->code == EXPR_LIST;
 }
 
-class GTY(()) rtx_insn_list : public rtx_def
+struct GTY(()) rtx_insn_list : public rtx_def
 {
+private:
   /* No extra fields, but adds invariant: (GET_CODE (X) == INSN_LIST).
 
      This is an instance of:
@@ -501,8 +505,9 @@ is_a_helper <rtx_insn_list *>::test (rtx rt)
 /* A node with invariant GET_CODE (X) == SEQUENCE i.e. a vector of rtx,
    typically (but not always) of rtx_insn *, used in the late passes.  */
 
-class GTY(()) rtx_sequence : public rtx_def
+struct GTY(()) rtx_sequence : public rtx_def
 {
+private:
   /* No extra fields, but adds invariant: (GET_CODE (X) == SEQUENCE).  */
 
 public:
@@ -533,7 +538,7 @@ is_a_helper <const rtx_sequence *>::test (const_rtx rt)
   return rt->code == SEQUENCE;
 }
 
-class GTY(()) rtx_insn : public rtx_def
+struct GTY(()) rtx_insn : public rtx_def
 {
 public:
   /* No extra fields, but adds the invariant:
@@ -567,7 +572,7 @@ public:
 
 /* Subclasses of rtx_insn.  */
 
-class GTY(()) rtx_debug_insn : public rtx_insn
+struct GTY(()) rtx_debug_insn : public rtx_insn
 {
   /* No extra fields, but adds the invariant:
        DEBUG_INSN_P (X) aka (GET_CODE (X) == DEBUG_INSN)
@@ -578,7 +583,7 @@ class GTY(()) rtx_debug_insn : public rtx_insn
      from rtl.def.  */
 };
 
-class GTY(()) rtx_nonjump_insn : public rtx_insn
+struct GTY(()) rtx_nonjump_insn : public rtx_insn
 {
   /* No extra fields, but adds the invariant:
        NONJUMP_INSN_P (X) aka (GET_CODE (X) == INSN)
@@ -589,7 +594,7 @@ class GTY(()) rtx_nonjump_insn : public rtx_insn
      from rtl.def.  */
 };
 
-class GTY(()) rtx_jump_insn : public rtx_insn
+struct GTY(()) rtx_jump_insn : public rtx_insn
 {
 public:
   /* No extra fields, but adds the invariant:
@@ -616,7 +621,7 @@ public:
   inline void set_jump_target (rtx_code_label *);
 };
 
-class GTY(()) rtx_call_insn : public rtx_insn
+struct GTY(()) rtx_call_insn : public rtx_insn
 {
   /* No extra fields, but adds the invariant:
        CALL_P (X) aka (GET_CODE (X) == CALL_INSN)
@@ -629,7 +634,7 @@ class GTY(()) rtx_call_insn : public rtx_insn
      from rtl.def.  */
 };
 
-class GTY(()) rtx_jump_table_data : public rtx_insn
+struct GTY(()) rtx_jump_table_data : public rtx_insn
 {
   /* No extra fields, but adds the invariant:
        JUMP_TABLE_DATA_P (X) aka (GET_CODE (INSN) == JUMP_TABLE_DATA)
@@ -639,8 +644,6 @@ class GTY(()) rtx_jump_table_data : public rtx_insn
      This is an instance of:
        DEF_RTL_EXPR(JUMP_TABLE_DATA, "jump_table_data", "uuBe0000", RTX_INSN)
      from rtl.def.  */
-
-public:
 
   /* This can be either:
 
@@ -657,7 +660,7 @@ public:
   inline scalar_int_mode get_data_mode () const;
 };
 
-class GTY(()) rtx_barrier : public rtx_insn
+struct GTY(()) rtx_barrier : public rtx_insn
 {
   /* No extra fields, but adds the invariant:
        BARRIER_P (X) aka (GET_CODE (X) == BARRIER)
@@ -668,7 +671,7 @@ class GTY(()) rtx_barrier : public rtx_insn
      from rtl.def.  */
 };
 
-class GTY(()) rtx_code_label : public rtx_insn
+struct GTY(()) rtx_code_label : public rtx_insn
 {
   /* No extra fields, but adds the invariant:
        LABEL_P (X) aka (GET_CODE (X) == CODE_LABEL)
@@ -679,7 +682,7 @@ class GTY(()) rtx_code_label : public rtx_insn
      from rtl.def.  */
 };
 
-class GTY(()) rtx_note : public rtx_insn
+struct GTY(()) rtx_note : public rtx_insn
 {
   /* No extra fields, but adds the invariant:
        NOTE_P(X) aka (GET_CODE (X) == NOTE)
@@ -840,7 +843,7 @@ struct GTY(()) rtvec_def {
 #define DEBUG_INSN_P(X) (GET_CODE (X) == DEBUG_INSN)
 
 /* Predicate yielding nonzero iff X is an insn that is not a debug insn.  */
-#define NONDEBUG_INSN_P(X) (INSN_P (X) && !DEBUG_INSN_P (X))
+#define NONDEBUG_INSN_P(X) (NONJUMP_INSN_P (X) || JUMP_P (X) || CALL_P (X))
 
 /* Nonzero if DEBUG_MARKER_INSN_P may possibly hold.  */
 #define MAY_HAVE_DEBUG_MARKER_INSNS debug_nonbind_markers_p
@@ -851,8 +854,7 @@ struct GTY(()) rtvec_def {
   (MAY_HAVE_DEBUG_MARKER_INSNS || MAY_HAVE_DEBUG_BIND_INSNS)
 
 /* Predicate yielding nonzero iff X is a real insn.  */
-#define INSN_P(X) \
-  (NONJUMP_INSN_P (X) || DEBUG_INSN_P (X) || JUMP_P (X) || CALL_P (X))
+#define INSN_P(X) (NONDEBUG_INSN_P (X) || DEBUG_INSN_P (X))
 
 /* Predicate yielding nonzero iff X is a note insn.  */
 #define NOTE_P(X) (GET_CODE (X) == NOTE)
@@ -1053,6 +1055,10 @@ is_a_helper <rtx_note *>::test (rtx_insn *insn)
 #define CONSTANT_P(X)   \
   (GET_RTX_CLASS (GET_CODE (X)) == RTX_CONST_OBJ)
 
+/* 1 if X is a LABEL_REF.  */
+#define LABEL_REF_P(X)  \
+  (GET_CODE (X) == LABEL_REF)
+
 /* 1 if X can be used to represent an object.  */
 #define OBJECT_P(X)							\
   ((GET_RTX_CLASS (GET_CODE (X)) & RTX_OBJ_MASK) == RTX_OBJ_RESULT)
@@ -1098,6 +1104,14 @@ is_a_helper <rtx_note *>::test (rtx_insn *insn)
      if (_code != (C1) && _code != (C2))				\
        rtl_check_failed_code2 (_rtx, (C1), (C2), __FILE__, __LINE__,	\
 			       __FUNCTION__); \
+     &_rtx->u.fld[_n]; }))
+
+#define RTL_CHECKC3(RTX, N, C1, C2, C3) __extension__			\
+(*({ __typeof (RTX) const _rtx = (RTX); const int _n = (N);		\
+     const enum rtx_code _code = GET_CODE (_rtx);			\
+     if (_code != (C1) && _code != (C2) && _code != (C3))		\
+       rtl_check_failed_code3 (_rtx, (C1), (C2), (C3), __FILE__,	\
+			       __LINE__, __FUNCTION__);			\
      &_rtx->u.fld[_n]; }))
 
 #define RTVEC_ELT(RTVEC, I) __extension__				\
@@ -1190,6 +1204,10 @@ extern void rtl_check_failed_code1 (const_rtx, enum rtx_code, const char *,
 extern void rtl_check_failed_code2 (const_rtx, enum rtx_code, enum rtx_code,
 				    const char *, int, const char *)
     ATTRIBUTE_NORETURN ATTRIBUTE_COLD;
+extern void rtl_check_failed_code3 (const_rtx, enum rtx_code, enum rtx_code,
+				    enum rtx_code, const char *, int,
+				    const char *)
+    ATTRIBUTE_NORETURN ATTRIBUTE_COLD;
 extern void rtl_check_failed_code_mode (const_rtx, enum rtx_code, machine_mode,
 					bool, const char *, int, const char *)
     ATTRIBUTE_NORETURN ATTRIBUTE_COLD;
@@ -1208,6 +1226,7 @@ extern void rtvec_check_failed_bounds (const_rtvec, int, const char *, int,
 #define RTL_CHECK2(RTX, N, C1, C2)  ((RTX)->u.fld[N])
 #define RTL_CHECKC1(RTX, N, C)	    ((RTX)->u.fld[N])
 #define RTL_CHECKC2(RTX, N, C1, C2) ((RTX)->u.fld[N])
+#define RTL_CHECKC3(RTX, N, C1, C2, C3) ((RTX)->u.fld[N])
 #define RTVEC_ELT(RTVEC, I)	    ((RTVEC)->elem[I])
 #define XWINT(RTX, N)		    ((RTX)->u.hwint[N])
 #define CWI_ELT(RTX, I)		    ((RTX)->u.hwiv.elem[I])
@@ -1362,6 +1381,7 @@ extern void rtl_check_failed_flag (const char *, const_rtx, const char *,
 #define XCVECLEN(RTX, N, C)	GET_NUM_ELEM (XCVEC (RTX, N, C))
 
 #define XC2EXP(RTX, N, C1, C2)      (RTL_CHECKC2 (RTX, N, C1, C2).rt_rtx)
+#define XC3EXP(RTX, N, C1, C2, C3)  (RTL_CHECKC3 (RTX, N, C1, C2, C3).rt_rtx)
 
 
 /* Methods of rtx_expr_list.  */
@@ -1615,7 +1635,7 @@ extern const char * const reg_note_name[];
    are passed to the function.
      CLOBBER expressions document the registers explicitly clobbered
    by this CALL_INSN.
-     Pseudo registers can not be mentioned in this list.  */
+     Pseudo registers cannot be mentioned in this list.  */
 #define CALL_INSN_FUNCTION_USAGE(INSN)	XEXP(INSN, 7)
 
 /* The label-number of a code-label.  The assembler label
@@ -2079,7 +2099,8 @@ costs_add_n_insns (struct full_rtx_costs *c, int n)
    inner_mode == the mode of the SUBREG_REG
    offset     == the SUBREG_BYTE
    outer_mode == the mode of the SUBREG itself.  */
-struct subreg_shape {
+class subreg_shape {
+public:
   subreg_shape (machine_mode, poly_uint16, machine_mode);
   bool operator == (const subreg_shape &) const;
   bool operator != (const subreg_shape &) const;
@@ -2632,7 +2653,7 @@ do {								        \
 
 /* For a SET rtx, SET_DEST is the place that is set
    and SET_SRC is the value it is set to.  */
-#define SET_DEST(RTX) XC2EXP (RTX, 0, SET, CLOBBER)
+#define SET_DEST(RTX) XC3EXP (RTX, 0, SET, CLOBBER, CLOBBER_HIGH)
 #define SET_SRC(RTX) XCEXP (RTX, 1, SET)
 #define SET_IS_RETURN_P(RTX)						\
   (RTL_FLAG_CHECK1 ("SET_IS_RETURN_P", (RTX), SET)->jump)
@@ -3296,6 +3317,15 @@ extern enum rtx_code unsigned_condition (enum rtx_code);
 extern enum rtx_code signed_condition (enum rtx_code);
 extern void mark_jump_label (rtx, rtx_insn *, int);
 
+/* Return true if integer comparison operator CODE interprets its operands
+   as unsigned.  */
+
+inline bool
+unsigned_condition_p (enum rtx_code code)
+{
+  return unsigned_condition (code) == code;
+}
+
 /* In jump.c */
 extern rtx_insn *delete_related_insns (rtx);
 
@@ -3362,6 +3392,7 @@ extern void set_insn_deleted (rtx_insn *);
 extern rtx single_set_2 (const rtx_insn *, const_rtx);
 extern bool contains_symbol_ref_p (const_rtx);
 extern bool contains_symbolic_reference_p (const_rtx);
+extern bool contains_constant_pool_address_p (const_rtx);
 
 /* Handle the cheap and common cases inline for performance.  */
 
@@ -3453,6 +3484,16 @@ extern bool tablejump_p (const rtx_insn *, rtx_insn **, rtx_jump_table_data **);
 extern int computed_jump_p (const rtx_insn *);
 extern bool tls_referenced_p (const_rtx);
 extern bool contains_mem_rtx_p (rtx x);
+extern bool reg_is_clobbered_by_clobber_high (unsigned int, machine_mode,
+					      const_rtx);
+
+/* Convenient wrapper for reg_is_clobbered_by_clobber_high.  */
+inline bool
+reg_is_clobbered_by_clobber_high (const_rtx x, const_rtx clobber_high_op)
+{
+  return reg_is_clobbered_by_clobber_high (REGNO (x), GET_MODE (x),
+					   clobber_high_op);
+}
 
 /* Overload for refers_to_regno_p for checking a single register.  */
 inline bool
@@ -3685,7 +3726,7 @@ struct GTY(()) target_rtl {
   rtx x_static_reg_base_value[FIRST_PSEUDO_REGISTER];
 
   /* The default memory attributes for each mode.  */
-  struct mem_attrs *x_mode_mem_attrs[(int) MAX_MACHINE_MODE];
+  class mem_attrs *x_mode_mem_attrs[(int) MAX_MACHINE_MODE];
 
   /* Track if RTL has been initialized.  */
   bool target_specific_initialized;
@@ -3719,10 +3760,10 @@ extern struct target_rtl *this_target_rtl;
 
 #ifndef GENERATOR_FILE
 /* Return the attributes of a MEM rtx.  */
-static inline const struct mem_attrs *
+static inline const class mem_attrs *
 get_mem_attrs (const_rtx x)
 {
-  struct mem_attrs *attrs;
+  class mem_attrs *attrs;
 
   attrs = MEM_ATTRS (x);
   if (!attrs)
@@ -4012,9 +4053,24 @@ extern void expand_null_return (void);
 extern void expand_naked_return (void);
 extern void emit_jump (rtx);
 
+/* Memory operation built-ins differ by return value.  Mapping
+   of the enum values is following:
+   - RETURN_BEGIN - return destination, e.g. memcpy
+   - RETURN_END - return destination + n, e.g. mempcpy
+   - RETURN_END_MINUS_ONE - return a pointer to the terminating
+    null byte of the string, e.g. strcpy
+*/
+
+enum memop_ret
+{
+  RETURN_BEGIN,
+  RETURN_END,
+  RETURN_END_MINUS_ONE
+};
+
 /* In expr.c */
 extern rtx move_by_pieces (rtx, rtx, unsigned HOST_WIDE_INT,
-			   unsigned int, int);
+			   unsigned int, memop_ret);
 extern poly_int64 find_args_size_adjust (rtx_insn *);
 extern poly_int64 fixup_args_size_notes (rtx_insn *, rtx_insn *, poly_int64);
 
@@ -4029,6 +4085,9 @@ extern void init_lower_subreg (void);
 /* In gcse.c */
 extern bool can_copy_p (machine_mode);
 extern bool can_assign_to_reg_without_clobbers_p (rtx, machine_mode);
+extern rtx_insn *prepare_copy_insn (rtx, rtx);
+
+/* In cprop.c */
 extern rtx fis_get_condition (rtx_insn *);
 
 /* In ira.c */
@@ -4228,6 +4287,7 @@ extern void vt_equate_reg_base_value (const_rtx, const_rtx);
 extern bool memory_modified_in_insn_p (const_rtx, const_rtx);
 extern bool may_be_sp_based_p (rtx);
 extern rtx gen_hard_reg_clobber (machine_mode, unsigned int);
+extern rtx gen_hard_reg_clobber_high (machine_mode, unsigned int);
 extern rtx get_reg_known_value (unsigned int);
 extern bool get_reg_known_equiv_p (unsigned int);
 extern rtx get_reg_base_value (unsigned int);
@@ -4282,6 +4342,7 @@ extern void insn_locations_init (void);
 extern void insn_locations_finalize (void);
 extern void set_curr_insn_location (location_t);
 extern location_t curr_insn_location (void);
+extern void set_insn_locations (rtx_insn *, location_t);
 
 /* rtl-error.c */
 extern void _fatal_insn_not_found (const_rtx, const char *, int, const char *)
@@ -4340,6 +4401,26 @@ strip_offset_and_add (rtx x, poly_int64_pod *offset)
   return x;
 }
 
+/* Return true if X is an operation that always operates on the full
+   registers for WORD_REGISTER_OPERATIONS architectures.  */
+
+inline bool
+word_register_operation_p (const_rtx x)
+{
+  switch (GET_CODE (x))
+    {
+    case CONST_INT:
+    case ROTATE:
+    case ROTATERT:
+    case SIGN_EXTRACT:
+    case ZERO_EXTRACT:
+      return false;
+    
+    default:
+      return true;
+    }
+}
+    
 /* gtype-desc.c.  */
 extern void gt_ggc_mx (rtx &);
 extern void gt_pch_nx (rtx &);

@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 B o d y                                  --
 --                                                                          --
---          Copyright (C) 1992-2018, Free Software Foundation, Inc.         --
+--          Copyright (C) 1992-2019, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -611,6 +611,16 @@ package body Sem_Aggr is
       Set_Is_Constrained (Itype, True);
       Set_Is_Internal    (Itype, True);
 
+      if Has_Predicates (Typ) then
+         Set_Has_Predicates (Itype);
+
+         if Present (Predicate_Function (Typ)) then
+            Set_Predicate_Function (Itype, Predicate_Function (Typ));
+         else
+            Set_Predicated_Parent (Itype, Predicated_Parent (Typ));
+         end if;
+      end if;
+
       --  A simple optimization: purely positional aggregates of static
       --  components should be passed to gigi unexpanded whenever possible, and
       --  regardless of the staticness of the bounds themselves. Subsequent
@@ -894,7 +904,7 @@ package body Sem_Aggr is
 
       --  If the aggregate has box-initialized components, its type must be
       --  frozen so that initialization procedures can properly be called
-      --  in the resolution that follows.  The replacement of boxes with
+      --  in the resolution that follows. The replacement of boxes with
       --  initialization calls is properly an expansion activity but it must
       --  be done during resolution.
 
@@ -1627,7 +1637,7 @@ package body Sem_Aggr is
          --  component assignments. If the expression covers several components
          --  the analysis and the predicate check take place later.
 
-         if Present (Predicate_Function (Component_Typ))
+         if Has_Predicates (Component_Typ)
            and then Analyzed (Expr)
          then
             Apply_Predicate_Check (Expr, Component_Typ);
@@ -4194,7 +4204,7 @@ package body Sem_Aggr is
          --  because the aggegate might not be expanded into individual
          --  component assignments.
 
-         if Present (Predicate_Function (Expr_Type))
+         if Has_Predicates (Expr_Type)
            and then Analyzed (Expr)
          then
             Apply_Predicate_Check (Expr, Expr_Type);
@@ -4254,8 +4264,15 @@ package body Sem_Aggr is
             Expr_Disc : Node_Id)
          is
          begin
-            if Nkind (Bound) = N_Identifier
-              and then Entity (Bound) = Disc
+            if Nkind (Bound) /= N_Identifier then
+               return;
+            end if;
+
+            --  We expect either the discriminant or the discriminal
+
+            if Entity (Bound) = Disc
+              or else (Ekind (Entity (Bound)) = E_In_Parameter
+                        and then Discriminal_Link (Entity (Bound)) = Disc)
             then
                Rewrite (Bound, New_Copy_Tree (Expr_Disc));
             end if;
@@ -4270,9 +4287,7 @@ package body Sem_Aggr is
       --  Start of processing for Rewrite_Range
 
       begin
-         if Has_Discriminants (Root_Type)
-           and then Nkind (Rge) = N_Range
-         then
+         if Has_Discriminants (Root_Type) and then Nkind (Rge) = N_Range then
             Low := Low_Bound (Rge);
             High := High_Bound (Rge);
 
@@ -4893,7 +4908,9 @@ package body Sem_Aggr is
                         --  Root record type whose discriminants may be used as
                         --  bounds in range nodes.
 
-                        Index : Node_Id;
+                        Assoc  : Node_Id;
+                        Choice : Node_Id;
+                        Index  : Node_Id;
 
                      begin
                         --  Rewrite the range nodes occurring in the indexes
@@ -4909,12 +4926,26 @@ package body Sem_Aggr is
                         end loop;
 
                         --  Rewrite the range nodes occurring as aggregate
-                        --  bounds.
+                        --  bounds and component associations.
 
-                        if Nkind (Expr) = N_Aggregate
-                          and then Present (Aggregate_Bounds (Expr))
-                        then
-                           Rewrite_Range (Rec_Typ, Aggregate_Bounds (Expr));
+                        if Nkind (Expr) = N_Aggregate then
+                           if Present (Aggregate_Bounds (Expr)) then
+                              Rewrite_Range (Rec_Typ, Aggregate_Bounds (Expr));
+                           end if;
+
+                           if Present (Component_Associations (Expr)) then
+                              Assoc := First (Component_Associations (Expr));
+                              while Present (Assoc) loop
+                                 Choice := First (Choices (Assoc));
+                                 while Present (Choice) loop
+                                    Rewrite_Range (Rec_Typ, Choice);
+
+                                    Next (Choice);
+                                 end loop;
+
+                                 Next (Assoc);
+                              end loop;
+                           end if;
                         end if;
                      end;
                   end if;

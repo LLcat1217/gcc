@@ -1,3 +1,248 @@
+2019-08-01  Bernd Edlinger  <bernd.edlinger@hotmail.de>
+
+	* Make-lang.in (lto.install-common): Remove unnecessary slash
+	between $(DESTDIR) and $(bindir).
+
+2019-07-25  Martin Liska  <mliska@suse.cz>
+
+	* lto-common.c (compare_tree_sccs_1): Use new macros
+	(e.g. DECL_SET_LAMBDA_FUNCTION and DECL_LAMBDA_FUNCTION_P).
+
+2019-07-22  Giuliano Belinassi  <giuliano.belinassi@usp.br>
+
+	* lang.opt (flag_dump_callgraph): New flag.
+	* lto-dump.c (dump_symtab_graphviz): New function.
+	(dump_tool_help): New option.
+	(lto_main): Handle graphviz dumping.
+
+2019-07-18  Jan Hubicka  <hubicka@ucw.cz>
+
+	* lto-common.c (gimple_register_canonical_type_1): Do not look for
+	non-ODR conflicts of types in anonymous namespaces.
+	(unify_scc): Do not merge anonymous namespace types.
+
+2019-07-09  Martin Sebor  <msebor@redhat.com>
+
+	PR c++/61339
+	* lto-common.c (lto_splay_tree_new): : Change class-key of PODs
+	to struct and others to class.
+	(mentions_vars_p): Same.
+	(register_resolution): Same.
+	(lto_register_var_decl_in_symtab): Same.
+	(lto_register_function_decl_in_symtab): Same.
+	(cmp_tree): Same.
+	(lto_read_decls): Same.
+
+2019-07-09  Martin Sebor  <msebor@redhat.com>
+
+	PR c++/61339
+	* lto-dump.c: Change class-key from class to struct and vice versa
+	to match convention and avoid -Wclass-is-pod and -Wstruct-no-pod.
+
+2019-07-04  Martin Liska  <mliska@suse.cz>
+
+	PR lto/91078
+	* lto-common.c (lto_file_finalize): Use memcpy to set
+	file_data->lto_section_header.
+
+2019-07-03  Martin Liska  <mliska@suse.cz>
+
+	* lto-common.c: Read LTO section and verify header.
+
+2019-06-27  Jan Hubicka  <jh@suse.cz>
+
+	* lto-common.c (lto_register_canonical_types_for_odr_types):
+	Copy CXX_ODR_P from the main variant.
+
+2019-06-27  Jan Hubicka  <jh@suse.cz>
+
+	* lto-common.c: tree-pretty-print.h
+	(type_streaming_finished): New static var.
+	(gimple_register_canonical_type_1): Return updated hash; handle ODR
+	types.
+	(iterative_hash_canonical_type): Update use of
+	gimple_register_canonical_type_1.
+
+2019-06-27  Martin Liska  <mliska@suse.cz>
+
+	* lto-dump.c (struct symbol_entry): Add default dtor.
+	(struct variable_entry): Likewise.
+	(struct function_entry): Likewise.
+	(dump_list_functions): Release memory.
+	(dump_list_variables): Likewise.
+
+2019-06-24  Jan Hubicka  <jh@suse.cz>
+
+	* lto-common.c (compare_tree_sccs_1): Compare CXX_ODR_P;
+	compare STRING_FLAG only for arrays and integers.
+
+2019-06-05  Martin Sebor  <msebor@redhat.com>
+
+	* lto-common.c (lto_file_finalize): Adjust quoting and hyphenation.
+
+2019-05-16  Martin Sebor  <msebor@redhat.com>
+
+        * lto-dump.c (lto_main): Same.
+        * lto.c (stream_out): Same.
+
+2019-05-10  Martin Liska  <mliska@suse.cz>
+
+	* Make-lang.in: Use program_transform_name for lto-dump.
+	* config-lang.in: Do not mark lto-dump compiler as we don't
+	want to have it installed at
+	lib/gcc/x86_64-pc-linux-gnu/10.0.0/lto-dump.
+
+2019-05-07  Rainer Orth  <ro@CeBiTec.Uni-Bielefeld.DE>
+
+	* lto-common.c (lto_file_read): Print section->start as int64_t,
+	section->len as uint64_t.
+	* lto-dump.c (symbol_entry::dump): Print sz as uint64_t.
+
+2019-05-06  Martin Liska  <mliska@suse.cz>
+
+	* lto-common.c: Update coding style.
+	* lto.c (materialize_cgraph): Likewise.
+
+2019-05-06  Hrishikesh Kulkarni  <hrishikeshparag@gmail.com>
+	    Martin Liska  <mliska@suse.cz>
+
+	* Make-lang.in: Add lto_dump-related definition.
+	* config-lang.in: Likewise.
+	* lang.opt: Add new language LTODump and options related
+	to LTO dump tool.
+	* lto-common.c (lto_read_decls): Support type statistics dump.
+	(lto_file_read): Likewise for object files.
+	* lto-dump.c: New file.
+	* lto-lang.c (lto_option_lang_mask): Move from ..
+	* lto.c (lto_option_lang_mask): .. here.
+	* lto.h (lto_option_lang_mask): New declaration.
+
+2019-05-06  Martin Liska  <mliska@suse.cz>
+	    Hrishikesh Kulkarni  <hrishikeshparag@gmail.com>
+
+	* Make-lang.in: Add lto-common.o.
+	* config-lang.in: Likewise for gtfiles.
+	* lto-common.c: New file.
+	* lto-common.h: New file.
+	* lto-lang.c: Include lto-common.h.
+	* lto.c: Move most of the functionality
+	into lto-common.c file.
+
+2019-04-12  Jan Hubicka  <hubicka@ucw.cz>
+
+	* lto.c (do_stream_out): rename to ...
+	(stream_out): ... this one; move original code to ...
+	(stream_out_partitions_1, stream_out_partitions): ... these new
+	functions.
+	(lto_wpa_write_files): Honnor lto_parallelism
+
+2019-03-26  Martin Liska  <mliska@suse.cz>
+
+	* lto-symtab.c (lto_symtab_merge_decls_2): Fix option name
+	wrapping.
+
+2019-03-11  Martin Liska  <mliska@suse.cz>
+
+	* lto-lang.c (lto_post_options): Wrap an option name
+	in a string format message and fix GNU coding style.
+	* lto-symtab.c (lto_symtab_merge_decls_2): Likewise.
+
+2019-03-09  Jakub Jelinek  <jakub@redhat.com>
+
+	PR target/79645
+	* lang.opt: Terminate description text with a dot.
+
+2019-02-28  Jason Merrill  <jason@redhat.com>
+
+	PR c++/88049 - ICE with undefined destructor and anon namespace.
+	* lto-symtab.c (lto_symtab_prevailing_virtual_decl): Return early
+	for a type in an anonymous namespace.
+
+2019-01-09  Sandra Loosemore  <sandra@codesourcery.com>
+
+	PR other/16615
+
+	* lto-partition.c: Mechanically replace "can not" with "cannot".
+	* lto-symtab.c: Likewise.
+	* lto.c: Likewise.
+
+2019-01-01  Jakub Jelinek  <jakub@redhat.com>
+
+	Update copyright years.
+
+2018-12-24  Jan Hubicka  <hubicka@ucw.cz>
+
+	* lto-symtab.c (lto_symtab_merge_decls_2): Do not report ODR violations
+	for method whose basetype was already reported.
+
+2018-11-30  Michael Ploujnikov  <michael.ploujnikov@oracle.com>
+
+	Minimize clone counter memory usage in LTO.
+	* lto-partition.c (privatize_symbol_name_1): Keep track of
+	non-unique symbol counters in the lto_clone_numbers hash
+	map.
+	(lto_promote_cross_file_statics): Allocate and free the
+	lto_clone_numbers hash map.
+	(lto_promote_statics_nonwpa): Free the lto_clone_numbers hash
+	map.
+
+2018-11-28  Jan Hubicka  <jh@suse.cz>
+
+	* lto.c (lto_read_decls): Fix handling of INTEGER_CST.
+
+2018-11-22  Jan Hubicka  <jh@suse.cz>
+
+	* lto.c (cmp_type_location): Remove.
+	(lto_read_decls): Do not allocate odr_types.
+
+2018-11-19  Martin Liska  <mliska@suse.cz>
+
+	PR lto/88077
+	* lto-symtab.c (lto_symtab_merge): Transform the
+	condition before r256989.
+
+2018-11-16  Martin Liska  <mliska@suse.cz>
+
+	PR lto/88004
+	* lto-symtab.c (lto_symtab_merge_symbols_1): Do not call
+	lto_symtab_symbol_p as it does checking of transparent alias.
+	These needs to be also merged in the function.
+
+2018-10-30  Michael Ploujnikov  <michael.ploujnikov@oracle.com>
+
+	* lto-partition.c (privatize_symbol_name_1): Use
+	  clone_function_name_numbered.
+
+2018-10-26  Jan Hubicka  <jh@suse.cz>
+
+	* lto/lto-symtab.c (lto_symtab_merge_decls_2): Fix extra space.
+
+2018-10-17  David Malcolm  <dmalcolm@redhat.com>
+
+	* Make-lang.in (selftest-lto): New.
+
+2018-08-29  Martin Liska  <mliska@suse.cz>
+
+	PR bootstrap/87130
+	* lto.c (read_cgraph_and_symbols): Fix thinko, revert
+	to behavior before r263887.
+
+2018-08-27  Martin Liska  <mliska@suse.cz>
+
+	* lto-lang.c (handle_const_attribute): Use new function
+	fndecl_built_in_p and remove check for FUNCTION_DECL if
+	possible.
+	* lto-symtab.c (lto_symtab_merge_p): Likewise.
+	(lto_symtab_merge_decls_1): Likewise.
+	(lto_symtab_merge_symbols): Likewise.
+	* lto.c (lto_maybe_register_decl): Likewise.
+	(read_cgraph_and_symbols): Likewise.
+
+2018-08-21  Tom de Vries  <tdevries@suse.de>
+
+	* lto.c (lto_main):  Call debuginfo_early_start and
+	debuginfo_early_stop.
+
 2018-07-20  Martin Sebor  <msebor@redhat.com>
 
 	PR middle-end/82063
@@ -27,12 +272,12 @@
 2018-06-20  Martin Liska  <mliska@suse.cz>
 
 	* lto-symtab.c (lto_symtab_merge_p): Remove not valid
-        FIXME comment.
+	FIXME comment.
 
 2018-06-19  Martin Liska  <mliska@suse.cz>
 
 	* lto-partition.c (add_symbol_to_partition_1): Use symbol_summary::get instead
-        of get_create.
+	of get_create.
 	(undo_partition): Likewise.
 	(lto_balanced_map): Likewise.
 
@@ -272,11 +517,11 @@
 
 2017-08-21  Richard Biener  <rguenther@suse.de>
 
-        * lto.c (unify_scc): Truncate DIE reference queue for dropped SCCs.
-        (lto_read_decls): Process TRANSLATION_UNIT_DECLs.  Remove
-        TYPE_DECL debug processing, register DIE references from
-        prevailing SCCs with the debug machinery.
-        (lto_section_with_id): Handle LTO debug sections.
+	* lto.c (unify_scc): Truncate DIE reference queue for dropped SCCs.
+	(lto_read_decls): Process TRANSLATION_UNIT_DECLs.  Remove
+	TYPE_DECL debug processing, register DIE references from
+	prevailing SCCs with the debug machinery.
+	(lto_section_with_id): Handle LTO debug sections.
 
 2017-08-16  Nathan Sidwell  <nathan@acm.org>
 
@@ -349,7 +594,7 @@
 
 2017-05-01  Xi Ruoyao  <ryxi@stu.xidian.edu.cn>
 
-        PR c++/80038
+	PR c++/80038
 	* lto-lang.c (lto_init): Set in_lto_p earlier.
 
 2017-04-12  Richard Biener  <rguenther@suse.de>
@@ -508,7 +753,7 @@
 	decls have no assemblernames.
 
 2016-01-19  Martin Liska  <mliska@suse.cz>
-            Martin Jambor  <mjambor@suse.cz>
+	    Martin Jambor  <mjambor@suse.cz>
 
 	* lto-partition.c: Include "hsa.h"
 	(add_symbol_to_partition_1): Put hsa implementations into the
@@ -2137,7 +2382,7 @@
 
 2012-06-18  Lawrence Crowl  <crowl@google.com>
 
-        * lto.c (do_whole_program_analysis):  Rename use of TV_PHASE_CGRAPH to
+	* lto.c (do_whole_program_analysis):  Rename use of TV_PHASE_CGRAPH to
 	TV_PHASE_OPT_GEN.  Use new timevar TV_PHASE_STREAM_OUT around the call
 	to lto_wpa_write_files.
 	(lto_main):  Rename use of TV_PHASE_CGRAPH to TV_PHASE_OPT_GEN.  Move
@@ -2193,7 +2438,7 @@
 2012-04-16  Jan Hubicka  <jh@suse.cz>
 
 	* lto.c (read_cgraph_and_symbols): Use FOR_EACH
-        walkers to walk cgraph and varpool.
+	walkers to walk cgraph and varpool.
 	(materialize_cgraph): Likewise.
 	* lto-partition.c (lto_1_to_1_map): Likewise.
 	(lto_balanced_map): Likewise.
@@ -2753,7 +2998,7 @@
 2010-10-03  Andi Kleen  <ak@linux.intel.com>
 
     	* lto.c (lto_file_finalize): Replace gcc_assert for missing section
-          with fatal_error.
+	  with fatal_error.
 
 2010-09-28  Jan Hubicka  <jh@suse.cz>
 
@@ -2856,7 +3101,7 @@
 2010-07-10  Andi Kleen  <ak@linux.intel.com>
 
 	PR lto/44992
-        * lto.c: Include splay-tree.h
+	* lto.c: Include splay-tree.h
 	(lto_resolution_read): Change to walk file_ids tree and parse
 	extra file_id in resolution file.
 	(lto_section_with_id): Add.
@@ -2909,7 +3154,7 @@
 
 2010-07-04  Jan Hubicka  <jh@suse.cz>
 
-        * lto.c (read_cgraph_and_symbols): Dump cgraph before merging.
+	* lto.c (read_cgraph_and_symbols): Dump cgraph before merging.
 
 2010-06-13  Richard Guenther  <rguenther@suse.de>
 
@@ -3328,7 +3573,7 @@
 	* lto.c (lto_resolution_read): Add more checks. Discard rest of line.
 
 2009-11-04  Richard Guenther  <rguenther@suse.de>
-            Rafael Avila de Espindola  <espindola@google.com>
+	    Rafael Avila de Espindola  <espindola@google.com>
 
 	* lto-elf.c (lto_elf_build_section_table): Add the base offset.
 	(lto_elf_file_open): Handle offsets in arguments name@offest.
@@ -5954,7 +6199,7 @@
 	* lto-tree.h: Likewise.
 	* lto-lang.c: Likewise.
 
-Copyright (C) 2006-2018 Free Software Foundation, Inc.
+Copyright (C) 2006-2019 Free Software Foundation, Inc.
 
 Copying and distribution of this file, with or without modification,
 are permitted in any medium without royalty provided the copyright

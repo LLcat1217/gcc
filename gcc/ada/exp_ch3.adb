@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 B o d y                                  --
 --                                                                          --
---          Copyright (C) 1992-2018, Free Software Foundation, Inc.         --
+--          Copyright (C) 1992-2019, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -201,6 +201,11 @@ package body Exp_Ch3 is
    function In_Runtime (E : Entity_Id) return Boolean;
    --  Check if E is defined in the RTL (in a child of Ada or System). Used
    --  to avoid to bring in the overhead of _Input, _Output for tagged types.
+
+   function Is_Null_Statement_List (Stmts : List_Id) return Boolean;
+   --  Returns true if Stmts is made of null statements only, possibly wrapped
+   --  in a case statement, recursively. This latter pattern may occur for the
+   --  initialization procedure of an unchecked union.
 
    function Is_User_Defined_Equality (Prim : Node_Id) return Boolean;
    --  Returns true if Prim is a user defined equality function
@@ -529,6 +534,7 @@ package body Exp_Ch3 is
       Has_Default_Init : Boolean;
       Index_List       : List_Id;
       Loc              : Source_Ptr;
+      Parameters       : List_Id;
       Proc_Id          : Entity_Id;
 
       function Init_Component return List_Id;
@@ -722,13 +728,14 @@ package body Exp_Ch3 is
          end if;
 
          Body_Stmts := Init_One_Dimension (1);
+         Parameters := Init_Formals (A_Type);
 
          Discard_Node (
            Make_Subprogram_Body (Loc,
              Specification =>
                Make_Procedure_Specification (Loc,
                  Defining_Unit_Name => Proc_Id,
-                 Parameter_Specifications => Init_Formals (A_Type)),
+                 Parameter_Specifications => Parameters),
              Declarations => New_List,
              Handled_Statement_Sequence =>
                Make_Handled_Sequence_Of_Statements (Loc,
@@ -753,18 +760,14 @@ package body Exp_Ch3 is
          --  where we have to generate a null procedure in case it is called
          --  by a client with Initialize_Scalars set). Such procedures have
          --  to be generated, but do not have to be called, so we mark them
-         --  as null to suppress the call.
+         --  as null to suppress the call. Kill also warnings for the _Init
+         --  out parameter, which is left entirely uninitialized.
 
          Set_Init_Proc (A_Type, Proc_Id);
 
-         if List_Length (Body_Stmts) = 1
-
-           --  We must skip SCIL nodes because they may have been added to this
-           --  list by Insert_Actions.
-
-           and then Nkind (First_Non_SCIL_Node (Body_Stmts)) = N_Null_Statement
-         then
+         if Is_Null_Statement_List (Body_Stmts) then
             Set_Is_Null_Init_Proc (Proc_Id);
+            Set_Warnings_Off (Defining_Identifier (First (Parameters)));
 
          else
             --  Try to build a static aggregate to statically initialize
@@ -1552,23 +1555,19 @@ package body Exp_Ch3 is
 
       --  Handle the optionally generated formal *_skip_null_excluding_checks
 
-      if Needs_Conditional_Null_Excluding_Check (Full_Init_Type) then
+      --  Look at the associated node for the object we are referencing and
+      --  verify that we are expanding a call to an Init_Proc for an internally
+      --  generated object declaration before passing True and skipping the
+      --  relevant checks.
 
-         --  Look at the associated node for the object we are referencing
-         --  and verify that we are expanding a call to an Init_Proc for an
-         --  internally generated object declaration before passing True and
-         --  skipping the relevant checks.
-
-         if Nkind (Id_Ref) in N_Has_Entity
-           and then Comes_From_Source (Associated_Node (Id_Ref))
-         then
-            Append_To (Args, New_Occurrence_Of (Standard_True, Loc));
-
-         --  Otherwise, we pass False to perform null-excluding checks
-
-         else
-            Append_To (Args, New_Occurrence_Of (Standard_False, Loc));
-         end if;
+      if Needs_Conditional_Null_Excluding_Check (Full_Init_Type)
+        and then Nkind (Id_Ref) in N_Has_Entity
+        and then (Comes_From_Source (Id_Ref)
+                   or else (Present (Associated_Node (Id_Ref))
+                             and then Comes_From_Source
+                                        (Associated_Node (Id_Ref))))
+      then
+         Append_To (Args, New_Occurrence_Of (Standard_True, Loc));
       end if;
 
       --  Add discriminant values if discriminants are present
@@ -2803,18 +2802,14 @@ package body Exp_Ch3 is
          --  where we have to generate a null procedure in case it is called
          --  by a client with Initialize_Scalars set). Such procedures have
          --  to be generated, but do not have to be called, so we mark them
-         --  as null to suppress the call.
+         --  as null to suppress the call. Kill also warnings for the _Init
+         --  out parameter, which is left entirely uninitialized.
 
          Set_Init_Proc (Rec_Type, Proc_Id);
 
-         if List_Length (Body_Stmts) = 1
-
-           --  We must skip SCIL nodes because they may have been added to this
-           --  list by Insert_Actions.
-
-           and then Nkind (First_Non_SCIL_Node (Body_Stmts)) = N_Null_Statement
-         then
+         if Is_Null_Statement_List (Body_Stmts) then
             Set_Is_Null_Init_Proc (Proc_Id);
+            Set_Warnings_Off (Defining_Identifier (First (Parameters)));
          end if;
       end Build_Init_Procedure;
 
@@ -3713,7 +3708,7 @@ package body Exp_Ch3 is
         and then not Is_Unchecked_Union (Rec_Type)
         and then not Has_New_Non_Standard_Rep (Rec_Type)
         and then not Parent_Subtype_Renaming_Discrims
-        and then Has_Non_Null_Base_Init_Proc (Etype (Rec_Type))
+        and then Present (Base_Init_Proc (Etype (Rec_Type)))
       then
          Copy_TSS (Base_Init_Proc (Etype (Rec_Type)), Rec_Type);
 
@@ -4853,7 +4848,7 @@ package body Exp_Ch3 is
                Make_Range (Sloc (Enumeration_Rep_Expr (Ent)),
                  Low_Bound =>
                    Make_Integer_Literal (Loc,
-                    Intval =>  Enumeration_Rep (Ent)),
+                    Intval => Enumeration_Rep (Ent)),
                  High_Bound =>
                    Make_Integer_Literal (Loc, Intval => Last_Repval))),
 
@@ -6587,6 +6582,16 @@ package body Exp_Ch3 is
          --  thus avoid creating a temporary.
 
          if Is_Delayed_Aggregate (Expr_Q) then
+
+            --  An aggregate that must be built in place is not resolved and
+            --  expanded until the enclosing construct is expanded. This will
+            --  happen when the aggregate is limited and the declared object
+            --  has a following address clause.
+
+            if Is_Limited_Type (Typ) and then not Analyzed (Expr) then
+               Resolve (Expr, Typ);
+            end if;
+
             Convert_Aggr_In_Object_Decl (N);
 
          --  Ada 2005 (AI-318-02): If the initialization expression is a call
@@ -7023,7 +7028,7 @@ package body Exp_Ch3 is
                --  Given that the type is limited we cannot perform a copy. If
                --  Expr_Q is the reference to a variable we mark the variable
                --  as OK_To_Rename to expand this declaration into a renaming
-               --  declaration (see bellow).
+               --  declaration (see below).
 
                if Is_Entity_Name (Expr_Q) then
                   Set_OK_To_Rename (Entity (Expr_Q));
@@ -8612,19 +8617,30 @@ package body Exp_Ch3 is
    ------------------
 
    function Init_Formals (Typ : Entity_Id) return List_Id is
-      Loc     : constant Source_Ptr := Sloc (Typ);
+      Loc        : constant Source_Ptr := Sloc (Typ);
+      Unc_Arr    : constant Boolean :=
+                     Is_Array_Type (Typ) and then not Is_Constrained (Typ);
+      With_Prot  : constant Boolean :=
+                     Has_Protected (Typ)
+                       or else (Is_Record_Type (Typ)
+                                 and then Is_Protected_Record_Type (Typ));
+      With_Task  : constant Boolean :=
+                     Has_Task (Typ)
+                       or else (Is_Record_Type (Typ)
+                                 and then Is_Task_Record_Type (Typ));
       Formals : List_Id;
 
    begin
-      --  First parameter is always _Init : in out typ. Note that we need this
-      --  to be in/out because in the case of the task record value, there
-      --  are default record fields (_Priority, _Size, -Task_Info) that may
-      --  be referenced in the generated initialization routine.
+      --  The first parameter is always _Init : [in] out Typ. Note that we need
+      --  it to be in/out in the case of an unconstrained array, because of the
+      --  need to have the bounds, and in the case of protected or task record
+      --  value, because there are default record fields that may be referenced
+      --  in the generated initialization routine.
 
       Formals := New_List (
         Make_Parameter_Specification (Loc,
           Defining_Identifier => Make_Defining_Identifier (Loc, Name_uInit),
-          In_Present          => True,
+          In_Present          => Unc_Arr or else With_Prot or else With_Task,
           Out_Present         => True,
           Parameter_Type      => New_Occurrence_Of (Typ, Loc)));
 
@@ -8632,9 +8648,7 @@ package body Exp_Ch3 is
       --  formals, _Master : Master_Id and _Chain : in out Activation_Chain
       --  We also add these parameters for the task record type case.
 
-      if Has_Task (Typ)
-        or else (Is_Record_Type (Typ) and then Is_Task_Record_Type (Typ))
-      then
+      if With_Task then
          Append_To (Formals,
            Make_Parameter_Specification (Loc,
              Defining_Identifier =>
@@ -8677,6 +8691,7 @@ package body Exp_Ch3 is
                Make_Defining_Identifier (Loc,
                  New_External_Name (Chars
                    (Component_Type (Typ)), "_skip_null_excluding_check")),
+             Expression          => New_Occurrence_Of (Standard_False, Loc),
              In_Present          => True,
              Parameter_Type      =>
                New_Occurrence_Of (Standard_Boolean, Loc)));
@@ -9021,6 +9036,43 @@ package body Exp_Ch3 is
          Next_Elmt (Iface_Tag_Elmt);
       end loop;
    end Init_Secondary_Tags;
+
+   ----------------------------
+   -- Is_Null_Statement_List --
+   ----------------------------
+
+   function Is_Null_Statement_List (Stmts : List_Id) return Boolean is
+      Stmt : Node_Id;
+
+   begin
+      --  We must skip SCIL nodes because they may have been added to the list
+      --  by Insert_Actions.
+
+      Stmt := First_Non_SCIL_Node (Stmts);
+      while Present (Stmt) loop
+         if Nkind (Stmt) = N_Case_Statement then
+            declare
+               Alt : Node_Id;
+            begin
+               Alt := First (Alternatives (Stmt));
+               while Present (Alt) loop
+                  if not Is_Null_Statement_List (Statements (Alt)) then
+                     return False;
+                  end if;
+
+                  Next (Alt);
+               end loop;
+            end;
+
+         elsif Nkind (Stmt) /= N_Null_Statement then
+            return False;
+         end if;
+
+         Stmt := Next_Non_SCIL_Node (Stmt);
+      end loop;
+
+      return True;
+   end Is_Null_Statement_List;
 
    ------------------------------
    -- Is_User_Defined_Equality --
@@ -9425,14 +9477,22 @@ package body Exp_Ch3 is
 
    --  or a null statement if the list L is empty
 
+   --  Equality may be user-defined for a given component type, in which case
+   --  a function call is constructed instead of an operator node. This is an
+   --  Ada 2012 change in the composability of equality for untagged composite
+   --  types.
+
    function Make_Eq_If
      (E : Entity_Id;
       L : List_Id) return Node_Id
    is
-      Loc        : constant Source_Ptr := Sloc (E);
+      Loc : constant Source_Ptr := Sloc (E);
+
       C          : Node_Id;
-      Field_Name : Name_Id;
       Cond       : Node_Id;
+      Field_Name : Name_Id;
+      Next_Test  : Node_Id;
+      Typ        : Entity_Id;
 
    begin
       if No (L) then
@@ -9443,6 +9503,7 @@ package body Exp_Ch3 is
 
          C := First_Non_Pragma (L);
          while Present (C) loop
+            Typ        := Etype (Defining_Identifier (C));
             Field_Name := Chars (Defining_Identifier (C));
 
             --  The tags must not be compared: they are not part of the value.
@@ -9455,22 +9516,55 @@ package body Exp_Ch3 is
             --  discriminants could be picked up in the private type case.
 
             if Field_Name = Name_uParent
-              and then Is_Interface (Etype (Defining_Identifier (C)))
+              and then Is_Interface (Typ)
             then
                null;
 
             elsif Field_Name /= Name_uTag then
-               Evolve_Or_Else (Cond,
-                 Make_Op_Ne (Loc,
-                   Left_Opnd =>
-                     Make_Selected_Component (Loc,
-                       Prefix        => Make_Identifier (Loc, Name_X),
-                       Selector_Name => Make_Identifier (Loc, Field_Name)),
+               declare
+                  Lhs : constant Node_Id :=
+                    Make_Selected_Component (Loc,
+                      Prefix        => Make_Identifier (Loc, Name_X),
+                      Selector_Name => Make_Identifier (Loc, Field_Name));
 
-                   Right_Opnd =>
-                     Make_Selected_Component (Loc,
-                       Prefix        => Make_Identifier (Loc, Name_Y),
-                       Selector_Name => Make_Identifier (Loc, Field_Name))));
+                  Rhs : constant Node_Id :=
+                    Make_Selected_Component (Loc,
+                      Prefix        => Make_Identifier (Loc, Name_Y),
+                      Selector_Name => Make_Identifier (Loc, Field_Name));
+                  Eq_Call : Node_Id;
+
+               begin
+                  --  Build equality code with a user-defined operator, if
+                  --  available, and with the predefined "=" otherwise. For
+                  --  compatibility with older Ada versions, and preserve the
+                  --  workings of some ASIS tools, we also use the predefined
+                  --  operation if the component-type equality is abstract,
+                  --  rather than raising Program_Error.
+
+                  if Ada_Version < Ada_2012 then
+                     Next_Test := Make_Op_Ne (Loc, Lhs, Rhs);
+
+                  else
+                     Eq_Call := Build_Eq_Call (Typ, Loc, Lhs, Rhs);
+
+                     if No (Eq_Call) then
+                        Next_Test := Make_Op_Ne (Loc, Lhs, Rhs);
+
+                     --  If a component has a defined abstract equality, its
+                     --  application raises Program_Error on that component
+                     --  and therefore on the current variant.
+
+                     elsif Nkind (Eq_Call) = N_Raise_Program_Error then
+                        Set_Etype (Eq_Call, Standard_Boolean);
+                        Next_Test := Make_Op_Not (Loc, Eq_Call);
+
+                     else
+                        Next_Test := Make_Op_Not (Loc, Eq_Call);
+                     end if;
+                  end if;
+               end;
+
+               Evolve_Or_Else (Cond, Next_Test);
             end if;
 
             Next_Non_Pragma (C);

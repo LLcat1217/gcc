@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 B o d y                                  --
 --                                                                          --
---          Copyright (C) 1992-2018, Free Software Foundation, Inc.         --
+--          Copyright (C) 1992-2019, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -502,7 +502,7 @@ package body Make is
    --  linker). For the sake of convenience, some program specific switches
    --  can be passed directly on the gnatmake command line. This procedure
    --  records these switches so that gnatmake can pass them to the right
-   --  program.  S is the switch to be added at the end of the command line
+   --  program. S is the switch to be added at the end of the command line
    --  for Program if Append_Switch is True. If Append_Switch is False S is
    --  added at the beginning of the command line.
 

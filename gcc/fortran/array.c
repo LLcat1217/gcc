@@ -1,5 +1,5 @@
 /* Array things
-   Copyright (C) 2000-2018 Free Software Foundation, Inc.
+   Copyright (C) 2000-2019 Free Software Foundation, Inc.
    Contributed by Andy Vaught
 
 This file is part of GCC.
@@ -324,10 +324,22 @@ gfc_free_array_spec (gfc_array_spec *as)
   if (as == NULL)
     return;
 
-  for (i = 0; i < as->rank + as->corank; i++)
+  if (as->corank == 0)
     {
-      gfc_free_expr (as->lower[i]);
-      gfc_free_expr (as->upper[i]);
+      for (i = 0; i < as->rank; i++)
+	{
+	  gfc_free_expr (as->lower[i]);
+	  gfc_free_expr (as->upper[i]);
+	}
+    }
+  else
+    {
+      int n = as->rank + as->corank - (as->cotype == AS_EXPLICIT ? 1 : 0);
+      for (i = 0; i < n; i++)
+	{
+	  gfc_free_expr (as->lower[i]);
+	  gfc_free_expr (as->upper[i]);
+	}
     }
 
   free (as);
@@ -1098,17 +1110,27 @@ match_array_cons_element (gfc_constructor_base *result)
   if (m != MATCH_YES)
     return m;
 
+  if (expr->ts.type == BT_BOZ)
+    {
+      gfc_error ("BOZ literal constant at %L cannot appear in an "
+		 "array constructor", &expr->where);
+      goto done;
+    }
+
   if (expr->expr_type == EXPR_FUNCTION
       && expr->ts.type == BT_UNKNOWN
       && strcmp(expr->symtree->name, "null") == 0)
-   {
+    {
       gfc_error ("NULL() at %C cannot appear in an array constructor");
-      gfc_free_expr (expr);
-      return MATCH_ERROR;
-   }
+      goto done;
+    }
 
   gfc_constructor_append_expr (result, expr, &gfc_current_locus);
   return MATCH_YES;
+
+done:
+  gfc_free_expr (expr);
+  return MATCH_ERROR;
 }
 
 
@@ -1246,7 +1268,9 @@ done:
 	{
 	  c = gfc_constructor_first (head);
 	  for (; c; c = gfc_constructor_next (c))
-	    gfc_convert_type (c->expr, &ts, 1);
+	    if (!gfc_convert_type (c->expr, &ts, 1)
+		&& c->expr->ts.type != BT_UNKNOWN)
+	      return MATCH_ERROR;
 	}
     }
   else

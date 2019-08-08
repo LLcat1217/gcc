@@ -1,5 +1,5 @@
 /* Command line option handling.
-   Copyright (C) 2002-2018 Free Software Foundation, Inc.
+   Copyright (C) 2002-2019 Free Software Foundation, Inc.
 
 This file is part of GCC.
 
@@ -106,8 +106,6 @@ struct cl_option
   BOOL_BITFIELD cl_tolower : 1;
   /* Report argument with -fverbose-asm  */
   BOOL_BITFIELD cl_report : 1;
-  /* Deprecated option  */
-  BOOL_BITFIELD cl_deprecated: 1;
   /* Argument is an unsigned integer with an optional byte suffix.  */
   BOOL_BITFIELD cl_byte_size: 1;
   /* Offset of field for this option in struct gcc_options, or
@@ -219,7 +217,6 @@ extern const unsigned int cl_enums_count;
 #define CL_ERR_NEGATIVE		(1 << 6) /* Negative form of option
 					    not permitted (together
 					    with OPT_SPECIAL_unknown).  */
-#define CL_ERR_DEPRECATED	(1 << 7) /* Deprecated option.  */
 
 /* Structure describing the result of decoding an option.  */
 
@@ -362,7 +359,8 @@ extern void decode_options (struct gcc_options *opts,
 			    location_t loc,
 			    diagnostic_context *dc,
 			    void (*target_option_override_hook) (void));
-extern int option_enabled (int opt_idx, void *opts);
+extern int option_enabled (int opt_idx, unsigned lang_mask, void *opts);
+
 extern bool get_option_state (struct gcc_options *, int,
 			      struct cl_option_state *);
 extern void set_option (struct gcc_options *opts,
@@ -422,6 +420,8 @@ extern bool target_handle_option (struct gcc_options *opts,
 extern void finish_options (struct gcc_options *opts,
 			    struct gcc_options *opts_set,
 			    location_t loc);
+extern void print_help (struct gcc_options *opts, unsigned int lang_mask, const
+			char *help_option_argument);
 extern void default_options_optimization (struct gcc_options *opts,
 					  struct gcc_options *opts_set,
 					  struct cl_decoded_option *decoded_options,
@@ -444,6 +444,8 @@ extern const struct sanitizer_opts_s
   size_t len;
   bool can_recover;
 } sanitizer_opts[];
+
+extern vec<const char *> help_option_arguments;
 
 extern void add_misspelling_candidates (auto_vec<char *> *candidates,
 					const struct cl_option *option,

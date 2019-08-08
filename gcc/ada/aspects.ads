@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 S p e c                                  --
 --                                                                          --
---          Copyright (C) 2010-2018, Free Software Foundation, Inc.         --
+--          Copyright (C) 2010-2019, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -275,6 +275,20 @@ package Aspects is
       Aspect_Value_Size                 => True,
       Aspect_Volatile_Function          => True,
       Aspect_Warnings                   => True,
+      others                            => False);
+
+   --  The following array indicates aspects that specify operational
+   --  characteristics, and thus are view-specific. Representation
+   --  aspects break privacy, as they are needed during expansion and
+   --  code generation.
+   --  List is currently incomplete ???
+
+   Operational_Aspect : constant array (Aspect_Id) of Boolean :=
+     (Aspect_Constant_Indexing          => True,
+      Aspect_Default_Iterator           => True,
+      Aspect_Iterator_Element           => True,
+      Aspect_Iterable                   => True,
+      Aspect_Variable_Indexing          => True,
       others                            => False);
 
    --  The following array indicates aspects for which multiple occurrences of

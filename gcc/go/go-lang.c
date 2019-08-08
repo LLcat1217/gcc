@@ -1,5 +1,5 @@
 /* go-lang.c -- Go frontend gcc interface.
-   Copyright (C) 2009-2018 Free Software Foundation, Inc.
+   Copyright (C) 2009-2019 Free Software Foundation, Inc.
 
 This file is part of GCC.
 
@@ -118,6 +118,7 @@ go_langhook_init (void)
   args.debug_escape_level = go_debug_escape_level;
   args.debug_escape_hash = go_debug_escape_hash;
   args.nil_check_size_threshold = TARGET_AIX ? -1 : 4096;
+  args.debug_optimization = go_debug_optimization;
   args.linemap = go_get_linemap();
   args.backend = go_get_backend();
   go_create_gogo (&args);

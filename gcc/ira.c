@@ -1,5 +1,5 @@
 /* Integrated Register Allocator (IRA) entry point.
-   Copyright (C) 2006-2018 Free Software Foundation, Inc.
+   Copyright (C) 2006-2019 Free Software Foundation, Inc.
    Contributed by Vladimir Makarov <vmakarov@redhat.com>.
 
 This file is part of GCC.
@@ -233,7 +233,7 @@ along with GCC; see the file COPYING3.  If not see
 	 more profitable than memory usage.
 
        * Popping the allocnos from the stack and assigning them hard
-         registers.  If IRA can not assign a hard register to an
+         registers.  If IRA cannot assign a hard register to an
          allocno and the allocno is coalesced, IRA undoes the
          coalescing and puts the uncoalesced allocnos onto the stack in
          the hope that some such allocnos will get a hard register
@@ -394,10 +394,10 @@ along with GCC; see the file COPYING3.  If not see
 #include "print-rtl.h"
 
 struct target_ira default_target_ira;
-struct target_ira_int default_target_ira_int;
+class target_ira_int default_target_ira_int;
 #if SWITCHABLE_TARGET
 struct target_ira *this_target_ira = &default_target_ira;
-struct target_ira_int *this_target_ira_int = &default_target_ira_int;
+class target_ira_int *this_target_ira_int = &default_target_ira_int;
 #endif
 
 /* A modified value of flag `-fira-verbose' used internally.  */
@@ -411,7 +411,7 @@ int ira_spilled_reg_stack_slots_num;
 
 /* The following array contains info about spilled pseudo-registers
    stack slots used in current function so far.  */
-struct ira_spilled_reg_stack_slot *ira_spilled_reg_stack_slots;
+class ira_spilled_reg_stack_slot *ira_spilled_reg_stack_slots;
 
 /* Correspondingly overall cost of the allocation, overall cost before
    reload, cost of the allocnos assigned to hard-registers, cost of
@@ -937,7 +937,7 @@ setup_uniform_class_p (void)
       ira_uniform_class_p[cl] = false;
       if (ira_class_hard_regs_num[cl] == 0)
 	continue;
-      /* We can not use alloc_reg_class_subclasses here because move
+      /* We cannot use alloc_reg_class_subclasses here because move
 	 cost hooks does not take into account that some registers are
 	 unavailable for the subtarget.  E.g. for i686, INT_SSE_REGS
 	 is element of alloc_reg_class_subclasses for GENERAL_REGS
@@ -966,7 +966,7 @@ setup_uniform_class_p (void)
    IRA_IMPORTANT_CLASSES, and IRA_IMPORTANT_CLASSES_NUM.
 
    Target may have many subtargets and not all target hard registers can
-   be used for allocation, e.g. x86 port in 32-bit mode can not use
+   be used for allocation, e.g. x86 port in 32-bit mode cannot use
    hard registers introduced in x86-64 like r8-r15).  Some classes
    might have the same allocatable hard registers, e.g.  INDEX_REGS
    and GENERAL_REGS in x86 port in 32-bit mode.  To decrease different
@@ -1573,11 +1573,17 @@ ira_init_register_move_cost (machine_mode mode)
 {
   static unsigned short last_move_cost[N_REG_CLASSES][N_REG_CLASSES];
   bool all_match = true;
-  unsigned int cl1, cl2;
+  unsigned int i, cl1, cl2;
+  HARD_REG_SET ok_regs;
 
   ira_assert (ira_register_move_cost[mode] == NULL
 	      && ira_may_move_in_cost[mode] == NULL
 	      && ira_may_move_out_cost[mode] == NULL);
+  CLEAR_HARD_REG_SET (ok_regs);
+  for (i = 0; i < FIRST_PSEUDO_REGISTER; i++)
+    if (targetm.hard_regno_mode_ok (i, mode))
+      SET_HARD_REG_BIT (ok_regs, i);
+
   /* Note that we might be asked about the move costs of modes that
      cannot be stored in any hard register, for example if an inline
      asm tries to create a register operand with an impossible mode.
@@ -1586,8 +1592,8 @@ ira_init_register_move_cost (machine_mode mode)
     for (cl2 = 0; cl2 < N_REG_CLASSES; cl2++)
       {
 	int cost;
-	if (!contains_reg_of_mode[cl1][mode]
-	    || !contains_reg_of_mode[cl2][mode])
+	if (!hard_reg_set_intersect_p (ok_regs, reg_class_contents[cl1])
+	    || !hard_reg_set_intersect_p (ok_regs, reg_class_contents[cl2]))
 	  {
 	    if ((ira_reg_class_max_nregs[cl1][mode]
 		 > ira_class_hard_regs_num[cl1])
@@ -1778,68 +1784,59 @@ setup_prohibited_mode_move_regs (void)
 
 
 
-/* Setup possible alternatives in ALTS for INSN.  */
-void
-ira_setup_alts (rtx_insn *insn, HARD_REG_SET &alts)
+/* Extract INSN and return the set of alternatives that we should consider.
+   This excludes any alternatives whose constraints are obviously impossible
+   to meet (e.g. because the constraint requires a constant and the operand
+   is nonconstant).  It also excludes alternatives that are bound to need
+   a spill or reload, as long as we have other alternatives that match
+   exactly.  */
+alternative_mask
+ira_setup_alts (rtx_insn *insn)
 {
-  /* MAP nalt * nop -> start of constraints for given operand and
-     alternative.  */
-  static vec<const char *> insn_constraints;
   int nop, nalt;
   bool curr_swapped;
   const char *p;
   int commutative = -1;
 
   extract_insn (insn);
+  preprocess_constraints (insn);
   alternative_mask preferred = get_preferred_alternatives (insn);
-  CLEAR_HARD_REG_SET (alts);
-  insn_constraints.release ();
-  insn_constraints.safe_grow_cleared (recog_data.n_operands
-				      * recog_data.n_alternatives + 1);
+  alternative_mask alts = 0;
+  alternative_mask exact_alts = 0;
   /* Check that the hard reg set is enough for holding all
      alternatives.  It is hard to imagine the situation when the
      assertion is wrong.  */
   ira_assert (recog_data.n_alternatives
 	      <= (int) MAX (sizeof (HARD_REG_ELT_TYPE) * CHAR_BIT,
 			    FIRST_PSEUDO_REGISTER));
+  for (nop = 0; nop < recog_data.n_operands; nop++)
+    if (recog_data.constraints[nop][0] == '%')
+      {
+	commutative = nop;
+	break;
+      }
   for (curr_swapped = false;; curr_swapped = true)
     {
-      /* Calculate some data common for all alternatives to speed up the
-	 function.  */
-      for (nop = 0; nop < recog_data.n_operands; nop++)
-	{
-	  for (nalt = 0, p = recog_data.constraints[nop];
-	       nalt < recog_data.n_alternatives;
-	       nalt++)
-	    {
-	      insn_constraints[nop * recog_data.n_alternatives + nalt] = p;
-	      while (*p && *p != ',')
-		{
-		  /* We only support one commutative marker, the first
-		     one.  We already set commutative above.  */
-		  if (*p == '%' && commutative < 0)
-		    commutative = nop;
-		  p++;
-		}
-	      if (*p)
-		p++;
-	    }
-	}
       for (nalt = 0; nalt < recog_data.n_alternatives; nalt++)
 	{
-	  if (!TEST_BIT (preferred, nalt)
-	      || TEST_HARD_REG_BIT (alts, nalt))
+	  if (!TEST_BIT (preferred, nalt) || TEST_BIT (exact_alts, nalt))
 	    continue;
 
+	  const operand_alternative *op_alt
+	    = &recog_op_alt[nalt * recog_data.n_operands];
+	  int this_reject = 0;
 	  for (nop = 0; nop < recog_data.n_operands; nop++)
 	    {
 	      int c, len;
 
+	      this_reject += op_alt[nop].reject;
+
 	      rtx op = recog_data.operand[nop];
-	      p = insn_constraints[nop * recog_data.n_alternatives + nalt];
+	      p = op_alt[nop].constraint;
 	      if (*p == 0 || *p == ',')
 		continue;
-	      
+
+	      bool win_p = false;
 	      do
 		switch (c = *p, len = CONSTRAINT_LEN (c, p), c)
 		  {
@@ -1857,7 +1854,14 @@ ira_setup_alts (rtx_insn *insn, HARD_REG_SET &alts)
 
 		  case '0':  case '1':  case '2':  case '3':  case '4':
 		  case '5':  case '6':  case '7':  case '8':  case '9':
-		    goto op_success;
+		    {
+		      rtx other = recog_data.operand[c - '0'];
+		      if (MEM_P (other)
+			  ? rtx_equal_p (other, op)
+			  : REG_P (op) || SUBREG_P (op))
+			goto op_success;
+		      win_p = true;
+		    }
 		    break;
 		    
 		  case 'g':
@@ -1871,7 +1875,11 @@ ira_setup_alts (rtx_insn *insn, HARD_REG_SET &alts)
 			{
 			case CT_REGISTER:
 			  if (reg_class_for_constraint (cn) != NO_REGS)
-			    goto op_success;
+			    {
+			      if (REG_P (op) || SUBREG_P (op))
+				goto op_success;
+			      win_p = true;
+			    }
 			  break;
 
 			case CT_CONST_INT:
@@ -1882,9 +1890,14 @@ ira_setup_alts (rtx_insn *insn, HARD_REG_SET &alts)
 			  break;
 
 			case CT_ADDRESS:
+			  goto op_success;
+
 			case CT_MEMORY:
 			case CT_SPECIAL_MEMORY:
-			  goto op_success;
+			  if (MEM_P (op))
+			    goto op_success;
+			  win_p = true;
+			  break;
 
 			case CT_FIXED_FORM:
 			  if (constraint_satisfied_p (op, cn))
@@ -1895,12 +1908,22 @@ ira_setup_alts (rtx_insn *insn, HARD_REG_SET &alts)
 		    }
 		  }
 	      while (p += len, c);
-	      break;
+	      if (!win_p)
+		break;
+	      /* We can make the alternative match by spilling a register
+		 to memory or loading something into a register.  Count a
+		 cost of one reload (the equivalent of the '?' constraint).  */
+	      this_reject += 6;
 	    op_success:
 	      ;
 	    }
+
 	  if (nop >= recog_data.n_operands)
-	    SET_HARD_REG_BIT (alts, nalt);
+	    {
+	      alts |= ALTERNATIVE_BIT (nalt);
+	      if (this_reject == 0)
+		exact_alts |= ALTERNATIVE_BIT (nalt);
+	    }
 	}
       if (commutative < 0)
 	break;
@@ -1910,14 +1933,15 @@ ira_setup_alts (rtx_insn *insn, HARD_REG_SET &alts)
       if (curr_swapped)
 	break;
     }
+  return exact_alts ? exact_alts : alts;
 }
 
 /* Return the number of the output non-early clobber operand which
    should be the same in any case as operand with number OP_NUM (or
-   negative value if there is no such operand).  The function takes
-   only really possible alternatives into consideration.  */
+   negative value if there is no such operand).  ALTS is the mask
+   of alternatives that we should consider.  */
 int
-ira_get_dup_out_num (int op_num, HARD_REG_SET &alts)
+ira_get_dup_out_num (int op_num, alternative_mask alts)
 {
   int curr_alt, c, original, dup;
   bool ignore_p, use_commut_op_p;
@@ -1934,7 +1958,7 @@ ira_get_dup_out_num (int op_num, HARD_REG_SET &alts)
     {
       rtx op = recog_data.operand[op_num];
       
-      for (curr_alt = 0, ignore_p = !TEST_HARD_REG_BIT (alts, curr_alt),
+      for (curr_alt = 0, ignore_p = !TEST_BIT (alts, curr_alt),
 	   original = -1;;)
 	{
 	  c = *str;
@@ -1945,7 +1969,7 @@ ira_get_dup_out_num (int op_num, HARD_REG_SET &alts)
 	  else if (c == ',')
 	    {
 	      curr_alt++;
-	      ignore_p = !TEST_HARD_REG_BIT (alts, curr_alt);
+	      ignore_p = !TEST_BIT (alts, curr_alt);
 	    }
 	  else if (! ignore_p)
 	    switch (c)
@@ -1975,26 +1999,8 @@ ira_get_dup_out_num (int op_num, HARD_REG_SET &alts)
 	}
       if (original == -1)
 	goto fail;
-      dup = -1;
-      for (ignore_p = false, str = recog_data.constraints[original - '0'];
-	   *str != 0;
-	   str++)
-	if (ignore_p)
-	  {
-	    if (*str == ',')
-	      ignore_p = false;
-	  }
-	else if (*str == '#')
-	  ignore_p = true;
-	else if (! ignore_p)
-	  {
-	    if (*str == '=')
-	      dup = original - '0';
-	    /* It is better ignore an alternative with early clobber.  */
-	    else if (*str == '&')
-	      goto fail;
-	  }
-      if (dup >= 0)
+      dup = original - '0';
+      if (recog_data.operand_type[dup] == OP_OUT)
 	return dup;
     fail:
       if (use_commut_op_p)
@@ -2320,7 +2326,7 @@ ira_setup_eliminable_regset (void)
 	      SET_HARD_REG_BIT (ira_no_alloc_regs, eliminables[i].from);
 	}
       else if (cannot_elim)
-	error ("%s cannot be used in asm here",
+	error ("%s cannot be used in %<asm%> here",
 	       reg_names[eliminables[i].from]);
       else
 	df_set_regs_ever_live (eliminables[i].from, true);
@@ -2334,7 +2340,7 @@ ira_setup_eliminable_regset (void)
 	    SET_HARD_REG_BIT (ira_no_alloc_regs, HARD_FRAME_POINTER_REGNUM);
 	}
       else if (frame_pointer_needed)
-	error ("%s cannot be used in asm here",
+	error ("%s cannot be used in %<asm%> here",
 	       reg_names[HARD_FRAME_POINTER_REGNUM]);
       else
 	df_set_regs_ever_live (HARD_FRAME_POINTER_REGNUM, true);
@@ -3086,6 +3092,7 @@ equiv_init_movable_p (rtx x, int regno)
 
     case CC0:
     case CLOBBER:
+    case CLOBBER_HIGH:
       return 0;
 
     case PRE_INC:
@@ -3133,10 +3140,30 @@ equiv_init_movable_p (rtx x, int regno)
   return 1;
 }
 
-/* TRUE if X references a memory location that would be affected by a store
-   to MEMREF.  */
-static int
-memref_referenced_p (rtx memref, rtx x)
+static bool memref_referenced_p (rtx memref, rtx x, bool read_p);
+
+/* Auxiliary function for memref_referenced_p.  Process setting X for
+   MEMREF store.  */
+static bool
+process_set_for_memref_referenced_p (rtx memref, rtx x)
+{
+  /* If we are setting a MEM, it doesn't count (its address does), but any
+     other SET_DEST that has a MEM in it is referencing the MEM.  */
+  if (MEM_P (x))
+    {
+      if (memref_referenced_p (memref, XEXP (x, 0), true))
+	return true;
+    }
+  else if (memref_referenced_p (memref, x, false))
+    return true;
+  
+  return false;
+}
+
+/* TRUE if X references a memory location (as a read if READ_P) that
+   would be affected by a store to MEMREF.  */
+static bool
+memref_referenced_p (rtx memref, rtx x, bool read_p)
 {
   int i, j;
   const char *fmt;
@@ -3152,30 +3179,51 @@ memref_referenced_p (rtx memref, rtx x)
     case CC0:
     case HIGH:
     case LO_SUM:
-      return 0;
+      return false;
 
     case REG:
       return (reg_equiv[REGNO (x)].replacement
 	      && memref_referenced_p (memref,
-				      reg_equiv[REGNO (x)].replacement));
+				      reg_equiv[REGNO (x)].replacement, read_p));
 
     case MEM:
-      if (true_dependence (memref, VOIDmode, x))
-	return 1;
+      /* Memory X might have another effective type than MEMREF.  */
+      if (read_p || true_dependence (memref, VOIDmode, x))
+	return true;
       break;
 
     case SET:
-      /* If we are setting a MEM, it doesn't count (its address does), but any
-	 other SET_DEST that has a MEM in it is referencing the MEM.  */
-      if (MEM_P (SET_DEST (x)))
-	{
-	  if (memref_referenced_p (memref, XEXP (SET_DEST (x), 0)))
-	    return 1;
-	}
-      else if (memref_referenced_p (memref, SET_DEST (x)))
-	return 1;
+      if (process_set_for_memref_referenced_p (memref, SET_DEST (x)))
+	return true;
 
-      return memref_referenced_p (memref, SET_SRC (x));
+      return memref_referenced_p (memref, SET_SRC (x), true);
+
+    case CLOBBER:
+    case CLOBBER_HIGH:
+      if (process_set_for_memref_referenced_p (memref, XEXP (x, 0)))
+	return true;
+
+      return false;
+
+    case PRE_DEC:
+    case POST_DEC:
+    case PRE_INC:
+    case POST_INC:
+      if (process_set_for_memref_referenced_p (memref, XEXP (x, 0)))
+	return true;
+
+      return memref_referenced_p (memref, XEXP (x, 0), true);
+      
+    case POST_MODIFY:
+    case PRE_MODIFY:
+      /* op0 = op0 + op1 */
+      if (process_set_for_memref_referenced_p (memref, XEXP (x, 0)))
+	return true;
+
+      if (memref_referenced_p (memref, XEXP (x, 0), true))
+	return true;
+
+      return memref_referenced_p (memref, XEXP (x, 1), true);
 
     default:
       break;
@@ -3186,17 +3234,17 @@ memref_referenced_p (rtx memref, rtx x)
     switch (fmt[i])
       {
       case 'e':
-	if (memref_referenced_p (memref, XEXP (x, i)))
-	  return 1;
+	if (memref_referenced_p (memref, XEXP (x, i), read_p))
+	  return true;
 	break;
       case 'E':
 	for (j = XVECLEN (x, i) - 1; j >= 0; j--)
-	  if (memref_referenced_p (memref, XVECEXP (x, i, j)))
-	    return 1;
+	  if (memref_referenced_p (memref, XVECEXP (x, i, j), read_p))
+	    return true;
 	break;
       }
 
-  return 0;
+  return false;
 }
 
 /* TRUE if some insn in the range (START, END] references a memory location
@@ -3217,7 +3265,7 @@ memref_used_between_p (rtx memref, rtx_insn *start, rtx_insn *end)
       if (!NONDEBUG_INSN_P (insn))
 	continue;
 
-      if (memref_referenced_p (memref, PATTERN (insn)))
+      if (memref_referenced_p (memref, PATTERN (insn), false))
 	return 1;
 
       /* Nonconst functions may access memory.  */
@@ -3499,7 +3547,7 @@ update_equiv_regs (void)
 	      rtx_insn_list *list;
 
 	      /* If we have already processed this pseudo and determined it
-		 can not have an equivalence, then honor that decision.  */
+		 cannot have an equivalence, then honor that decision.  */
 	      if (reg_equiv[regno].no_equiv)
 		continue;
 
@@ -4013,7 +4061,7 @@ setup_reg_equiv (void)
 
 /* Print chain C to FILE.  */
 static void
-print_insn_chain (FILE *file, struct insn_chain *c)
+print_insn_chain (FILE *file, class insn_chain *c)
 {
   fprintf (file, "insn=%d, ", INSN_UID (c->insn));
   bitmap_print (file, &c->live_throughout, "live_throughout: ", ", ");
@@ -4025,7 +4073,7 @@ print_insn_chain (FILE *file, struct insn_chain *c)
 static void
 print_insn_chains (FILE *file)
 {
-  struct insn_chain *c;
+  class insn_chain *c;
   for (c = reload_insn_chain; c ; c = c->next)
     print_insn_chain (file, c);
 }
@@ -4086,10 +4134,10 @@ static void
 build_insn_chain (void)
 {
   unsigned int i;
-  struct insn_chain **p = &reload_insn_chain;
+  class insn_chain **p = &reload_insn_chain;
   basic_block bb;
-  struct insn_chain *c = NULL;
-  struct insn_chain *next = NULL;
+  class insn_chain *c = NULL;
+  class insn_chain *next = NULL;
   auto_bitmap live_relevant_regs;
   auto_bitmap elim_regset;
   /* live_subregs is a vector used to keep accurate information about
@@ -4366,10 +4414,9 @@ rtx_moveable_p (rtx *loc, enum op_type type)
 {
   const char *fmt;
   rtx x = *loc;
-  enum rtx_code code = GET_CODE (x);
   int i, j;
 
-  code = GET_CODE (x);
+  enum rtx_code code = GET_CODE (x);
   switch (code)
     {
     case CONST:
@@ -4411,6 +4458,7 @@ rtx_moveable_p (rtx *loc, enum op_type type)
 	      && rtx_moveable_p (&XEXP (x, 2), OP_IN));
 
     case CLOBBER:
+    case CLOBBER_HIGH:
       return rtx_moveable_p (&SET_DEST (x), OP_OUT);
 
     case UNSPEC_VOLATILE:
@@ -4863,7 +4911,9 @@ interesting_dest_for_shprep (rtx_insn *insn, basic_block call_dom)
   for (int i = 0; i < XVECLEN (pat, 0); i++)
     {
       rtx sub = XVECEXP (pat, 0, i);
-      if (GET_CODE (sub) == USE || GET_CODE (sub) == CLOBBER)
+      if (GET_CODE (sub) == USE
+	  || GET_CODE (sub) == CLOBBER
+	  || GET_CODE (sub) == CLOBBER_HIGH)
 	continue;
       if (GET_CODE (sub) != SET
 	  || side_effects_p (sub))
@@ -5147,6 +5197,8 @@ ira (FILE *f)
   int ira_max_point_before_emit;
   bool saved_flag_caller_saves = flag_caller_saves;
   enum ira_region saved_flag_ira_region = flag_ira_region;
+  unsigned int i;
+  int num_used_regs = 0;
 
   clear_bb_flags ();
 
@@ -5162,12 +5214,17 @@ ira (FILE *f)
 
   ira_conflicts_p = optimize > 0;
 
+  /* Determine the number of pseudos actually requiring coloring.  */
+  for (i = FIRST_PSEUDO_REGISTER; i < DF_REG_SIZE (df); i++)
+    num_used_regs += !!(DF_REG_USE_COUNT (i) + DF_REG_DEF_COUNT (i));
+
   /* If there are too many pseudos and/or basic blocks (e.g. 10K
      pseudos and 10K blocks or 100K pseudos and 1K blocks), we will
      use simplified and faster algorithms in LRA.  */
   lra_simple_p
     = (ira_use_lra_p
-       && max_reg_num () >= (1 << 26) / last_basic_block_for_fn (cfun));
+       && num_used_regs >= (1 << 26) / last_basic_block_for_fn (cfun));
+
   if (lra_simple_p)
     {
       /* It permits to skip live range splitting in LRA.  */
@@ -5380,7 +5437,7 @@ ira (FILE *f)
   if (ira_conflicts_p && ! ira_use_lra_p)
     /* Opposite to reload pass, LRA does not use any conflict info
        from IRA.  We don't rebuild conflict info for LRA (through
-       ira_flattening call) and can not use the check here.  We could
+       ira_flattening call) and cannot use the check here.  We could
        rebuild this info for LRA in the check mode but there is a risk
        that code generated with the check and without it will be a bit
        different.  Calling ira_flattening in any mode would be a
@@ -5410,11 +5467,11 @@ ira (FILE *f)
 	{
 	  ira_spilled_reg_stack_slots_num = 0;
 	  ira_spilled_reg_stack_slots
-	    = ((struct ira_spilled_reg_stack_slot *)
+	    = ((class ira_spilled_reg_stack_slot *)
 	       ira_allocate (max_regno
-			     * sizeof (struct ira_spilled_reg_stack_slot)));
-	  memset (ira_spilled_reg_stack_slots, 0,
-		  max_regno * sizeof (struct ira_spilled_reg_stack_slot));
+			     * sizeof (class ira_spilled_reg_stack_slot)));
+	  memset ((void *)ira_spilled_reg_stack_slots, 0,
+		  max_regno * sizeof (class ira_spilled_reg_stack_slot));
 	}
     }
   allocate_initial_values ();

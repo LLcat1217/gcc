@@ -1,5 +1,5 @@
 /* Subroutines used for MIPS code generation.
-   Copyright (C) 1989-2018 Free Software Foundation, Inc.
+   Copyright (C) 1989-2019 Free Software Foundation, Inc.
    Contributed by A. Lichnewsky, lich@inria.inria.fr.
    Changes by Michael Meissner, meissner@osf.org.
    64-bit r4000 support by Ian Lance Taylor, ian@cygnus.com, and
@@ -836,7 +836,13 @@ static const struct mips_rtx_cost_data
   { /* Loongson-2F */
     DEFAULT_COSTS
   },
-  { /* Loongson-3A */
+  { /* Loongson gs464.  */
+    DEFAULT_COSTS
+  },
+  { /* Loongson gs464e.  */
+    DEFAULT_COSTS
+  },
+  { /* Loongson gs264e.  */
     DEFAULT_COSTS
   },
   { /* M4k */
@@ -3025,7 +3031,7 @@ static void
 mips_emit_move_or_split (rtx dest, rtx src, enum mips_split_type split_type)
 {
   if (mips_split_move_p (dest, src, split_type))
-    mips_split_move (dest, src, split_type);
+    mips_split_move (dest, src, split_type, NULL);
   else
     mips_emit_move (dest, src);
 }
@@ -4774,10 +4780,11 @@ mips_split_move_p (rtx dest, rtx src, enum mips_split_type split_type)
 }
 
 /* Split a move from SRC to DEST, given that mips_split_move_p holds.
-   SPLIT_TYPE describes the split condition.  */
+   SPLIT_TYPE describes the split condition.  INSN is the insn being
+   split, if we know it, NULL otherwise.  */
 
 void
-mips_split_move (rtx dest, rtx src, enum mips_split_type split_type)
+mips_split_move (rtx dest, rtx src, enum mips_split_type split_type, rtx insn_)
 {
   rtx low_dest;
 
@@ -4835,6 +4842,32 @@ mips_split_move (rtx dest, rtx src, enum mips_split_type split_type)
 	{
 	  mips_emit_move (low_dest, mips_subword (src, false));
 	  mips_emit_move (mips_subword (dest, true), mips_subword (src, true));
+	}
+    }
+
+  /* This is a hack.  See if the next insn uses DEST and if so, see if we
+     can forward SRC for DEST.  This is most useful if the next insn is a
+     simple store.   */
+  rtx_insn *insn = (rtx_insn *)insn_;
+  struct mips_address_info addr = {};
+  if (insn)
+    {
+      rtx_insn *next = next_nonnote_nondebug_insn_bb (insn);
+      if (next)
+	{
+	  rtx set = single_set (next);
+	  if (set && SET_SRC (set) == dest)
+	    {
+	      if (MEM_P (src))
+		{
+		  rtx tmp = XEXP (src, 0);
+		  mips_classify_address (&addr, tmp, GET_MODE (tmp), true);
+		  if (addr.reg && REGNO (addr.reg) != REGNO (dest))
+		    validate_change (next, &SET_SRC (set), src, false);
+		}
+	      else
+		validate_change (next, &SET_SRC (set), src, false);
+	    }
 	}
     }
 }
@@ -5064,7 +5097,7 @@ mips_split_move_insn_p (rtx dest, rtx src, rtx insn)
 void
 mips_split_move_insn (rtx dest, rtx src, rtx insn)
 {
-  mips_split_move (dest, src, mips_insn_split_type (insn));
+  mips_split_move (dest, src, mips_insn_split_type (insn), insn);
 }
 
 /* Return the appropriate instructions to move SRC into DEST.  Assume
@@ -7905,15 +7938,15 @@ mips_use_by_pieces_infrastructure_p (unsigned HOST_WIDE_INT size,
 {
   if (op == STORE_BY_PIECES)
     return mips_store_by_pieces_p (size, align);
-  if (op == MOVE_BY_PIECES && HAVE_movmemsi)
+  if (op == MOVE_BY_PIECES && HAVE_cpymemsi)
     {
-      /* movmemsi is meant to generate code that is at least as good as
-	 move_by_pieces.  However, movmemsi effectively uses a by-pieces
+      /* cpymemsi is meant to generate code that is at least as good as
+	 move_by_pieces.  However, cpymemsi effectively uses a by-pieces
 	 implementation both for moves smaller than a word and for
 	 word-aligned moves of no more than MIPS_MAX_MOVE_BYTES_STRAIGHT
 	 bytes.  We should allow the tree-level optimisers to do such
 	 moves by pieces, as it often exposes other optimization
-	 opportunities.  We might as well continue to use movmemsi at
+	 opportunities.  We might as well continue to use cpymemsi at
 	 the rtl level though, as it produces better code when
 	 scheduling is disabled (such as at -O).  */
       if (currently_expanding_to_rtl)
@@ -8058,7 +8091,7 @@ mips_block_move_straight (rtx dest, rtx src, HOST_WIDE_INT length)
       src = adjust_address (src, BLKmode, offset);
       dest = adjust_address (dest, BLKmode, offset);
       move_by_pieces (dest, src, length - offset,
-		      MIN (MEM_ALIGN (src), MEM_ALIGN (dest)), 0);
+		      MIN (MEM_ALIGN (src), MEM_ALIGN (dest)), RETURN_BEGIN);
     }
 }
 
@@ -8132,7 +8165,7 @@ mips_block_move_loop (rtx dest, rtx src, HOST_WIDE_INT length,
     emit_insn (gen_nop ());
 }
 
-/* Expand a movmemsi instruction, which copies LENGTH bytes from
+/* Expand a cpymemsi instruction, which copies LENGTH bytes from
    memory reference SRC to memory reference DEST.  */
 
 bool
@@ -9555,7 +9588,7 @@ mips_dwarf_frame_reg_mode (int regno)
 {
   machine_mode mode = default_dwarf_frame_reg_mode (regno);
 
-  if (FP_REG_P (regno) && mips_abi == ABI_32 && TARGET_FLOAT64)
+  if (FP_REG_P (regno) && mips_abi == ABI_32 && !TARGET_FLOAT32)
     mode = SImode;
 
   return mode;
@@ -11945,7 +11978,7 @@ static void
 mips_emit_probe_stack_range (HOST_WIDE_INT first, HOST_WIDE_INT size)
 {
   if (TARGET_MIPS16)
-    sorry ("-fstack-check=specific not implemented for MIPS16");
+    sorry ("%<-fstack-check=specific%> not implemented for MIPS16");
 
   /* See if we have a constant small number of probes to generate.  If so,
      that's the easy case.  */
@@ -12797,8 +12830,9 @@ mips_hard_regno_mode_ok_uncached (unsigned int regno, machine_mode mode)
       if (mode == CCFmode)
 	return !(TARGET_FLOATXX && (regno & 1) != 0);
 
-      /* Allow 64-bit vector modes for Loongson-2E/2F.  */
-      if (TARGET_LOONGSON_VECTORS
+      /* Allow 64-bit vector modes for Loongson MultiMedia extensions
+	 Instructions (MMI).  */
+      if (TARGET_LOONGSON_MMI
 	  && (mode == V2SImode
 	      || mode == V4HImode
 	      || mode == V8QImode
@@ -12899,7 +12933,8 @@ mips_hard_regno_scratch_ok (unsigned int regno)
    registers with MODE > 64 bits are part clobbered too.  */
 
 static bool
-mips_hard_regno_call_part_clobbered (unsigned int regno, machine_mode mode)
+mips_hard_regno_call_part_clobbered (rtx_insn *insn ATTRIBUTE_UNUSED,
+				     unsigned int regno, machine_mode mode)
 {
   if (TARGET_FLOATXX
       && hard_regno_nregs (regno, mode) == 1
@@ -13368,7 +13403,7 @@ mips_vector_mode_supported_p (machine_mode mode)
     case E_V2SImode:
     case E_V4HImode:
     case E_V8QImode:
-      return TARGET_LOONGSON_VECTORS;
+      return TARGET_LOONGSON_MMI;
 
     default:
       return MSA_SUPPORTED_MODE_P (mode);
@@ -13425,7 +13460,7 @@ mips_preferred_simd_mode (scalar_mode mode)
 /* Implement TARGET_VECTORIZE_AUTOVECTORIZE_VECTOR_SIZES.  */
 
 static void
-mips_autovectorize_vector_sizes (vector_sizes *sizes)
+mips_autovectorize_vector_sizes (vector_sizes *sizes, bool)
 {
   if (ISA_HAS_MSA)
     sizes->safe_push (16);
@@ -14601,6 +14636,7 @@ mips_issue_rate (void)
     case PROCESSOR_OCTEON2:
     case PROCESSOR_OCTEON3:
     case PROCESSOR_I6400:
+    case PROCESSOR_GS264E:
       return 2;
 
     case PROCESSOR_SB1:
@@ -14613,7 +14649,8 @@ mips_issue_rate (void)
 
     case PROCESSOR_LOONGSON_2E:
     case PROCESSOR_LOONGSON_2F:
-    case PROCESSOR_LOONGSON_3A:
+    case PROCESSOR_GS464:
+    case PROCESSOR_GS464E:
     case PROCESSOR_P5600:
     case PROCESSOR_P6600:
       return 4;
@@ -14745,10 +14782,10 @@ mips_multipass_dfa_lookahead (void)
   if (TUNE_SB1)
     return 4;
 
-  if (TUNE_LOONGSON_2EF || TUNE_LOONGSON_3A)
+  if (TUNE_LOONGSON_2EF || TUNE_GS464 || TUNE_GS464E)
     return 4;
 
-  if (TUNE_OCTEON)
+  if (TUNE_OCTEON || TUNE_GS264E)
     return 2;
 
   if (TUNE_P5600 || TUNE_P6600 || TUNE_I6400)
@@ -15141,6 +15178,24 @@ mips_prefetch_cookie (rtx write, rtx locality)
   /* store_retained / load_retained.  */
   return GEN_INT (INTVAL (write) + 6);
 }
+
+/* Loongson EXT2 only implements pref hint=0 (prefetch for load) and hint=1
+   (prefetch for store), other hint just scale to hint = 0 and hint = 1.  */
+
+rtx
+mips_loongson_ext2_prefetch_cookie (rtx write, rtx)
+{
+  /* store.  */
+  if (INTVAL (write) == 1)
+    return GEN_INT (INTVAL (write));
+
+  /* load.  */
+  if (INTVAL (write) == 0)
+    return GEN_INT (INTVAL (write));
+
+  gcc_unreachable ();
+}
+
 
 /* Flags that indicate when a built-in function is available.
 
@@ -15203,7 +15258,7 @@ AVAIL_NON_MIPS16 (dspr2, TARGET_DSPR2)
 AVAIL_NON_MIPS16 (dsp_32, !TARGET_64BIT && TARGET_DSP)
 AVAIL_NON_MIPS16 (dsp_64, TARGET_64BIT && TARGET_DSP)
 AVAIL_NON_MIPS16 (dspr2_32, !TARGET_64BIT && TARGET_DSPR2)
-AVAIL_NON_MIPS16 (loongson, TARGET_LOONGSON_VECTORS)
+AVAIL_NON_MIPS16 (loongson, TARGET_LOONGSON_MMI)
 AVAIL_NON_MIPS16 (cache, TARGET_CACHE_BUILTIN)
 AVAIL_NON_MIPS16 (msa, TARGET_MSA)
 
@@ -16810,6 +16865,19 @@ mips_expand_builtin_insn (enum insn_code icode, unsigned int nops,
 	 swap is needed for builtins.  */
       gcc_assert (has_target_p && nops == 3);
       std::swap (ops[1], ops[2]);
+      break;
+
+    case CODE_FOR_msa_maddv_b:
+    case CODE_FOR_msa_maddv_h:
+    case CODE_FOR_msa_maddv_w:
+    case CODE_FOR_msa_maddv_d:
+    case CODE_FOR_msa_fmadd_w:
+    case CODE_FOR_msa_fmadd_d:
+    case CODE_FOR_msa_fmsub_w:
+    case CODE_FOR_msa_fmsub_d:
+      /* fma(a, b, c) results into (a * b + c), however builtin_msa_fmadd expects
+	 it to be (a + b * c).  Swap the 1st and 3rd operands.  */
+      std::swap (ops[1], ops[3]);
       break;
 
     case CODE_FOR_msa_slli_b:
@@ -18881,13 +18949,13 @@ mips_reorg_process_insns (void)
   if (crtl->profile)
     cfun->machine->all_noreorder_p = false;
 
-  /* Code compiled with -mfix-vr4120, -mfix-rm7000 or -mfix-24k can't be
-     all noreorder because we rely on the assembler to work around some
-     errata.  The R5900 too has several bugs.  */
+  /* Code compiled with -mfix-vr4120, -mfix-r5900, -mfix-rm7000 or
+     -mfix-24k can't be all noreorder because we rely on the assembler
+     to work around some errata.  The R5900 target has several bugs.  */
   if (TARGET_FIX_VR4120
       || TARGET_FIX_RM7000
       || TARGET_FIX_24K
-      || TARGET_MIPS5900)
+      || TARGET_FIX_R5900)
     cfun->machine->all_noreorder_p = false;
 
   /* The same is true for -mfix-vr4130 if we might generate MFLO or
@@ -19376,6 +19444,7 @@ mips_output_mi_thunk (FILE *file, tree thunk_fndecl ATTRIBUTE_UNUSED,
 		      HOST_WIDE_INT delta, HOST_WIDE_INT vcall_offset,
 		      tree function)
 {
+  const char *fnname = IDENTIFIER_POINTER (DECL_ASSEMBLER_NAME (thunk_fndecl));
   rtx this_rtx, temp1, temp2, fnaddr;
   rtx_insn *insn;
   bool use_sibcall_p;
@@ -19488,9 +19557,11 @@ mips_output_mi_thunk (FILE *file, tree thunk_fndecl ATTRIBUTE_UNUSED,
   split_all_insns_noflow ();
   mips16_lay_out_constants (true);
   shorten_branches (insn);
+  assemble_start_function (thunk_fndecl, fnname);
   final_start_function (insn, file, 1);
   final (insn, file, 1);
   final_end_function ();
+  assemble_end_function (thunk_fndecl, fnname);
 
   /* Clean up the vars set above.  Note that final_end_function resets
      the global pointer for us.  */
@@ -19570,7 +19641,7 @@ mips_set_compression_mode (unsigned int compression_mode)
 	sorry ("MIPS16 PIC for ABIs other than o32 and o64");
 
       if (TARGET_XGOT)
-	sorry ("MIPS16 -mxgot code");
+	sorry ("MIPS16 %<-mxgot%> code");
 
       if (TARGET_HARD_FLOAT_ABI && !TARGET_OLDABI)
 	sorry ("hard-float MIPS16 code for ABIs other than o32 and o64");
@@ -20164,6 +20235,24 @@ mips_option_override (void)
       TARGET_DSPR2 = false;
     }
 
+  /* Make sure that when TARGET_LOONGSON_MMI is true, TARGET_HARD_FLOAT_ABI
+     is true.  In o32 pairs of floating-point registers provide 64-bit
+     values.  */
+  if (TARGET_LOONGSON_MMI &&  !TARGET_HARD_FLOAT_ABI)
+    error ("%<-mloongson-mmi%> must be used with %<-mhard-float%>");
+
+  /* If TARGET_LOONGSON_EXT2, enable TARGET_LOONGSON_EXT.  */
+  if (TARGET_LOONGSON_EXT2)
+    {
+      /* Make sure that when TARGET_LOONGSON_EXT2 is true, TARGET_LOONGSON_EXT
+	 is true.  If a user explicitly says -mloongson-ext2 -mno-loongson-ext
+	 then that is an error.  */
+      if (!TARGET_LOONGSON_EXT
+	  && (target_flags_explicit & MASK_LOONGSON_EXT) != 0)
+	error ("%<-mloongson-ext2%> must be used with %<-mloongson-ext%>");
+      target_flags |= MASK_LOONGSON_EXT;
+    }
+
   /* .eh_frame addresses should be the same width as a C pointer.
      Most MIPS ABIs support only one pointer size, so the assembler
      will usually know exactly how big an .eh_frame address is.
@@ -20243,6 +20332,12 @@ mips_option_override (void)
   if ((target_flags_explicit & MASK_FIX_R4400) == 0
       && strcmp (mips_arch_info->name, "r4400") == 0)
     target_flags |= MASK_FIX_R4400;
+
+  /* Default to working around R5900 errata only if the processor
+     was selected explicitly.  */
+  if ((target_flags_explicit & MASK_FIX_R5900) == 0
+      && strcmp (mips_arch_info->name, "r5900") == 0)
+    target_flags |= MASK_FIX_R5900;
 
   /* Default to working around R10000 errata only if the processor
      was selected explicitly.  */
@@ -20541,9 +20636,19 @@ mips_final_postscan_insn (FILE *file ATTRIBUTE_UNUSED, rtx_insn *insn,
   if (INSN_P (insn)
       && GET_CODE (PATTERN (insn)) == UNSPEC_VOLATILE
       && XINT (PATTERN (insn), 1) == UNSPEC_CONSTTABLE_END)
-    mips_set_text_contents_type (asm_out_file, "__pend_",
-				 INTVAL (XVECEXP (PATTERN (insn), 0, 0)),
-				 TRUE);
+    {
+      rtx_insn *next_insn = next_real_nondebug_insn (insn);
+      bool code_p = (next_insn != NULL
+		     && INSN_P (next_insn)
+		     && (GET_CODE (PATTERN (next_insn)) != UNSPEC_VOLATILE
+			 || XINT (PATTERN (next_insn), 1) != UNSPEC_CONSTTABLE));
+
+      /* Switch content type depending on whether there is code beyond
+	 the constant pool.  */
+      mips_set_text_contents_type (asm_out_file, "__pend_",
+				   INTVAL (XVECEXP (PATTERN (insn), 0, 0)),
+				   code_p);
+    }
 }
 
 /* Return the function that is used to expand the <u>mulsidi3 pattern.
@@ -21149,12 +21254,12 @@ void mips_function_profiler (FILE *file)
 
 /* Implement TARGET_SHIFT_TRUNCATION_MASK.  We want to keep the default
    behavior of TARGET_SHIFT_TRUNCATION_MASK for non-vector modes even
-   when TARGET_LOONGSON_VECTORS is true.  */
+   when TARGET_LOONGSON_MMI is true.  */
 
 static unsigned HOST_WIDE_INT
 mips_shift_truncation_mask (machine_mode mode)
 {
-  if (TARGET_LOONGSON_VECTORS && VECTOR_MODE_P (mode))
+  if (TARGET_LOONGSON_MMI && VECTOR_MODE_P (mode))
     return 0;
 
   return GET_MODE_BITSIZE (mode) - 1;
@@ -21255,7 +21360,7 @@ mips_expand_vpc_loongson_even_odd (struct expand_vec_perm_d *d)
   unsigned i, odd, nelt = d->nelt;
   rtx t0, t1, t2, t3;
 
-  if (!(TARGET_HARD_FLOAT && TARGET_LOONGSON_VECTORS))
+  if (!(TARGET_HARD_FLOAT && TARGET_LOONGSON_MMI))
     return false;
   /* Even-odd for V2SI/V2SFmode is matched by interleave directly.  */
   if (nelt < 4)
@@ -21312,7 +21417,7 @@ mips_expand_vpc_loongson_pshufh (struct expand_vec_perm_d *d)
   unsigned i, mask;
   rtx rmask;
 
-  if (!(TARGET_HARD_FLOAT && TARGET_LOONGSON_VECTORS))
+  if (!(TARGET_HARD_FLOAT && TARGET_LOONGSON_MMI))
     return false;
   if (d->vmode != V4HImode)
     return false;
@@ -21364,7 +21469,7 @@ mips_expand_vpc_loongson_bcast (struct expand_vec_perm_d *d)
   unsigned i, elt;
   rtx t0, t1;
 
-  if (!(TARGET_HARD_FLOAT && TARGET_LOONGSON_VECTORS))
+  if (!(TARGET_HARD_FLOAT && TARGET_LOONGSON_MMI))
     return false;
   /* Note that we've already matched V2SI via punpck and V4HI via pshufh.  */
   if (d->vmode != V8QImode)
@@ -21958,7 +22063,7 @@ mips_expand_vector_init (rtx target, rtx vals)
     }
 
   /* Loongson is the only cpu with vectors with more elements.  */
-  gcc_assert (TARGET_HARD_FLOAT && TARGET_LOONGSON_VECTORS);
+  gcc_assert (TARGET_HARD_FLOAT && TARGET_LOONGSON_MMI);
 
   /* If all values are identical, broadcast the value.  */
   if (all_same)
@@ -22213,7 +22318,7 @@ mips_expand_vec_cond_expr (machine_mode mode, machine_mode vimode,
 	  if (mode != vimode)
 	    {
 	      xop1 = gen_reg_rtx (vimode);
-	      emit_move_insn (xop1, gen_rtx_SUBREG (vimode, operands[1], 0));
+	      emit_move_insn (xop1, gen_lowpart (vimode, operands[1]));
 	    }
 	  emit_move_insn (src1, xop1);
 	}
@@ -22230,7 +22335,7 @@ mips_expand_vec_cond_expr (machine_mode mode, machine_mode vimode,
 	  if (mode != vimode)
 	    {
 	      xop2 = gen_reg_rtx (vimode);
-	      emit_move_insn (xop2, gen_rtx_SUBREG (vimode, operands[2], 0));
+	      emit_move_insn (xop2, gen_lowpart (vimode, operands[2]));
 	    }
 	  emit_move_insn (src2, xop2);
 	}
